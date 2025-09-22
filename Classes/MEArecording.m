@@ -285,20 +285,23 @@ classdef MEArecording < handle
             tx = zci(interp_wf_matrix); %Apply to interpolated waveform matrix
             [sample_idx,electrode_idx] = ind2sub(size(interp_wf_matrix),tx);
             unit_zero_crossings = splitapply(@(x) {x},sample_idx,electrode_idx);
-            [unit_trough_value,unit_trough_idx] = min(interp_wf_matrix);
-            peak_1_cutout = interp_wf_matrix(unit_trough_idx - ms_conversion:unit_trough_idx,:); %Limit detection range for peaks
-            peak_2_cutout = interp_wf_matrix(unit_trough_idx:unit_trough_idx + ms_conversion,:);
-            [peak_1_value, ~] = max(peak_1_cutout);
-            [peak_2_value, peak_2_idx] = max(peak_2_cutout);
-            peak_2_idx = peak_2_idx + unit_trough_idx - 1;
-            asymmetry = (peak_2_value - peak_1_value) ./ (peak_2_value + peak_1_value);
-            t2pdelay = (peak_2_idx - unit_trough_idx) ./ (obj.RecordingInfo.SamplingRate / 1000); %in [ms]
-            t2pratio = abs(unit_trough_value ./ peak_2_value);
+            % [~, unit_trough_idx] = min(mean(interp_wf_matrix,2)); %Find a consistent trough value across units
+            [~, all_trough_idx] = min(interp_wf_matrix);
             waveform_features = cell(1,length(max_amplitudes));
-            for u = 1:size(interp_wf_matrix,2)
+            for u = 1:length(all_trough_idx)
+                unit_trough_idx = all_trough_idx(u);
+                peak_1_cutout = interp_wf_matrix(unit_trough_idx - ms_conversion:unit_trough_idx,u); %Limit detection range for peaks
+                peak_2_cutout = interp_wf_matrix(unit_trough_idx:unit_trough_idx + ms_conversion,u);
+                [peak_1_value, ~] = max(peak_1_cutout);
+                [peak_2_value, peak_2_idx] = max(peak_2_cutout);
+                peak_2_idx = peak_2_idx + unit_trough_idx - 1;
+                asymmetry = (peak_2_value - peak_1_value) ./ (peak_2_value + peak_1_value);
+                t2pdelay = (peak_2_idx - unit_trough_idx) ./ (obj.RecordingInfo.SamplingRate / 1000); %in [ms]
+                t2pratio = abs(-1 ./ peak_2_value); % -1 instead of the trough value as already normalized
+                                
                 unit_features = struct();
                 zc = [1 unit_zero_crossings{u}' length(xq)];
-                [~,zc_pre_trough] = max(zc(zc<unit_trough_idx(u))); %Find zero crossing towards the trough
+                [~,zc_pre_trough] = max(zc(zc<unit_trough_idx)); %Find zero crossing towards the trough
                 zc_pre_trough = max([zc_pre_trough 2]);
                 unit_features.AUC_peak_1 = trapz(interp_wf_matrix(zc(zc_pre_trough - 1):zc(zc_pre_trough)));
                 unit_features.AUC_trough = abs(trapz(interp_wf_matrix(zc(zc_pre_trough):zc(zc_pre_trough + 1))));
@@ -309,16 +312,16 @@ classdef MEArecording < handle
                 end
                 %We pad the signal with min/max values to ensure reliable slewrate
                 %calculations
-                rise_cutout = interp_wf_matrix(unit_trough_idx(u):peak_2_idx(u),u);
+                rise_cutout = interp_wf_matrix(unit_trough_idx:peak_2_idx,u);
                 padded_rise = [ones(100,1)*rise_cutout(1); rise_cutout; ones(100,1)*rise_cutout(end)];
                 unit_features.Rise = mean(slewrate(padded_rise,interpolation_factor));
-                decay_cutout = interp_wf_matrix(peak_2_idx(u):end,u);
+                decay_cutout = interp_wf_matrix(peak_2_idx:end,u);
                 decay_cutout = decay_cutout(1:find(decay_cutout==min(decay_cutout)));
                 padded_decay = [ones(100,1)*decay_cutout(1); decay_cutout; ones(100,1)*decay_cutout(end)];
                 unit_features.Decay = mean(slewrate(padded_decay,interpolation_factor));
-                unit_features.Asymmetry = asymmetry(u);
-                unit_features.T2Pdelay = t2pdelay(u);
-                unit_features.T2Pratio = t2pratio(u);
+                unit_features.Asymmetry = asymmetry;
+                unit_features.T2Pdelay = t2pdelay;
+                unit_features.T2Pratio = t2pratio;
                 feature_names = fieldnames(unit_features);
                 for f = 1:length(feature_names) %If slewrates could not be calculated // should happen very rarely
                    if isempty(unit_features.(feature_names{f}))
