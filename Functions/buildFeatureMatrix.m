@@ -1,6 +1,6 @@
-function [X, feature_names, aligned_wf, norm_acgs] = buildFeatureMatrix(ctc, waveforms, acgs, sr_wf, acg_bin_size, acg_lag)
+function [X, feature_names, aligned_wf, norm_acgs, feature_groups] = ...
+    buildFeatureMatrix(ctc, waveforms, acgs, sr_wf, acg_bin_size, acg_lag)
 % BUILDFEATUREMATRIX  Build a classifier-compatible feature matrix from raw waveforms and ACGs.
-%
 % Converts raw waveforms and ACGs (from DeePhys units or any external source)
 % into the feature format used by the CellTypeClassifier. All data is harmonized
 % to ctc.Parameters.Harmonization regardless of its origin.
@@ -222,6 +222,9 @@ wf_names     = "Waveform" + (1:size(aligned_wf, 1));
 feature_names = [acg_names, wf_names];
 
 X = [norm_acgs', aligned_wf'];
+
+feature_groups.n_acg = size(norm_acgs, 1);
+feature_groups.n_wf  = size(aligned_wf, 1);
 
 fprintf('Feature matrix: %i units × %i features (%i ACG + %i waveform)\n', ...
     N_units, size(X, 2), size(norm_acgs, 1), size(aligned_wf, 1));

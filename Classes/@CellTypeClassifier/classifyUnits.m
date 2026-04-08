@@ -28,17 +28,15 @@ rg     = ctc.RecordingGroup;
 
 % ── Extract features via harmonized path ─────────────────────────────────────
 [wf, acg, sr]                        = ctc.getOrExtract(ctc.UnitList);
-[X_raw, feat_names, aligned_wf, norm_acgs] = buildFeatureMatrix(ctc, wf, acg, sr);
+[X_raw, feat_names, aligned_wf, norm_acgs, ~] = buildFeatureMatrix(ctc, wf, acg, sr);
 
 % Store harmonized data for downstream inspection / plotting
 ctc.HarmonizedWaveforms = aligned_wf;
 ctc.HarmonizedACGs      = norm_acgs;
 ctc.HarmonizedSR        = ctc.Parameters.Harmonization.WaveformTargetSamplingRate;
 
-% ── Chip-level normalisation (matching main branch prepareInputMatrix) ───────
+% ── Step 1: Chip-level normalisation (matching generateTrainLabels) ───────────
 X_raw(isnan(X_raw)) = 0;
-
-% Step 1: z-score within each NormalizationVar group (all units per group)
 [iG, G] = rg.combineMetadataIndices(ctc.UnitList, p_umap.NormalizationVar);
 g_idx = unique(iG);
 for g = 1:length(g_idx)
@@ -46,29 +44,35 @@ for g = 1:length(g_idx)
     X_raw(mask, :) = normalize(X_raw(mask, :));
 end
 
-train_idx = logical(labels.umap_train_idx);
-test_idx  = logical(labels.umap_test_idx);
+% ── Steps 2-4: Apply stored normalization from generateTrainLabels ────────────
+% Reusing ctc.NormStats ensures train and test data are on identical scales
+% to the unsupervised embedding learned in generateTrainLabels.
+% This prevents the normalization mismatch that causes ring artifacts.
+assert(~isempty(ctc.NormStats), ...
+    'ctc.NormStats is empty — run generateTrainLabels() before classifyUnits().');
+ns = ctc.NormStats;
 
-% Step 2: global z-score — fit on train, apply train stats to test
-if length(G) > 1
-    [X_train, mu, sigma] = normalize(X_raw(train_idx, :));
-    X_test = normalize(X_raw(test_idx, :), 'center', mu, 'scale', sigma);
+% Apply stored global z-score (fit on subset in generateTrainLabels)
+if ~isempty(ns.mu)
+    X_all = normalize(X_raw, 'center', ns.mu, 'scale', ns.sigma);
 else
-    X_train = X_raw(train_idx, :);
-    X_test  = X_raw(test_idx, :);
+    X_all = X_raw;
 end
 
-% Step 3: remove NaN columns (from train or test)
-nan_cols = any(isnan(X_train), 1) | any(isnan(X_test), 1);
-X_train(:, nan_cols)   = [];
-X_test(:, nan_cols)    = [];
-feat_names(nan_cols)   = [];
+% Remove the same NaN columns identified during label generation
+X_all(:, ns.nan_cols) = [];
 
-% Step 4: scale by max(abs(train))
-scale = max(abs(X_train), [], 1);
-scale(scale == 0) = 1;
-X_train = X_train ./ scale;
-X_test  = X_test  ./ scale;
+% Apply stored scale vector
+X_all = X_all ./ ns.scale;
+
+% Apply stored feature group weights
+X_all = CellTypeClassifier.applyFeatureWeights(X_all, ns.feature_groups, p_umap);
+
+% Split into train and test using stored label indices
+train_idx = logical(labels.umap_train_idx);
+test_idx  = logical(labels.umap_test_idx);
+X_train   = X_all(train_idx, :);
+X_test    = X_all(test_idx,  :);
 
 % ── Supervised UMAP classification ───────────────────────────────────────────
 [Y_pred, ~, ~, test_reduction, train_reduction] = supervisedUMAP(ctc, ...
