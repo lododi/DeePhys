@@ -36,14 +36,15 @@ if parallel
 else
     for iPath = 1:length(sorting_path_list)
         save_file = fullfile(sorting_path_list(iPath),'MEArecording.mat');
+        md = metadata;
         if ~exist(save_file,'file') || params.Save.Overwrite
-            metadata.InputPath = sorting_path_list(iPath);
-            temp_file = fullfile(metadata.InputPath,"spike_templates.npy");
+            md.InputPath = sorting_path_list(iPath);
+            temp_file = fullfile(md.InputPath,"spike_templates.npy");
             if exist(temp_file,"file")
                 spk_temp = readNPY(temp_file);
                 if length(unique(spk_temp)) > params.QC.N_Units
                     try
-                        MEArecording(metadata, params);
+                        MEArecording(md, params);
                     catch
                         disp("Failed for sorting: " + sorting_path_list(iPath))
                         failed_sortings = [failed_sortings, sorting_path_list(iPath)];

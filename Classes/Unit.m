@@ -21,21 +21,6 @@ classdef Unit < handle
         unitID
         FullACG
     end
-    
-    methods (Static)
-                
-        function feature_names = returnFeatureNames(feature_group)
-            switch feature_group
-                case "act"
-                    feature_names = ["FiringRate","MeanInterSpikeInterval","VarianceInterSpikeInterval","CVInterSpikeInterval","PartialAutocorrelation"];
-                case "reg"
-                    feature_names = ["RegularityFrequency","RegularityMagnitude","RegularityFit"];
-                case "c22"
-                    feature_names = string(GetAllFeatureNames());
-            end
-        end
-        
-    end
 
     
     methods
@@ -72,13 +57,13 @@ classdef Unit < handle
             unit_id = find(unit.MEArecording.Units == unit);
         end
 
-        % function acg = get.ACG(unit)
+        % function acg = get.ACG(unit) %uncommented by LD 20260129
         % 
-        %     % acg = unit.MEArecording.Connectivity.CCG.CCGs(:,unit.unitID,unit.unitID);
+        %     acg = unit.MEArecording.Connectivity.CCG.CCGs(:,unit.unitID,unit.unitID);
         % end
 
         function acg = get.FullACG(unit)
-            acg = unit.MEArecording.Connectivity.FullCCG.CCGs(:,unit.unitID,unit.unitID);
+                acg = unit.MEArecording.Connectivity.FullCCG.CCGs(:,unit.unitID,unit.unitID);
         end
         
         function [eCCG,iCCG] = getCCGconnections(unit)
