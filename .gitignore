@@ -2,3 +2,9 @@
 *.mexa64
 *.nfs*
 Xtras/mearec_array.mat
+echo "*.orig" >> .gitignore
+echo "*.save" >> .gitignore
+echo "*_BACKUP_*" >> .gitignore
+echo "*_LOCAL_*" >> .gitignore
+echo "*_REMOTE_*" >> .gitignore
+echo "*_BASE_*" >> .gitignore

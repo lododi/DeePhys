@@ -57,9 +57,9 @@ classdef Unit < handle
             unit_id = find(unit.MEArecording.Units == unit);
         end
 
-        % function acg = get.ACG(unit) %uncommented by LD 20260129
+        % function acg = get.ACG(unit)
         % 
-        %     acg = unit.MEArecording.Connectivity.CCG.CCGs(:,unit.unitID,unit.unitID);
+        %     % acg = unit.MEArecording.Connectivity.CCG.CCGs(:,unit.unitID,unit.unitID);
         % end
 
         function acg = get.FullACG(unit)
