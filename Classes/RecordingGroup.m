@@ -208,7 +208,7 @@ classdef RecordingGroup < handle
             buffer_wf = size(ref_wf,1)+2*max_offset;
             xq = linspace(1,buffer_wf,buffer_wf*interp_factor);
 
-            % interp_wf = interp1(x,ref_wf,xq,"linear",'extrap');
+            %interp_wf = interp1(x,ref_wf,xq,"linear",'extrap');
             interp_wf = interp1(x,ref_wf,xq,"makima");
             interp_wf = interp_wf((max_offset*interp_factor)+1:((buffer_wf-max_offset-1)*interp_factor),:);
             interp_wf = interp_wf./max(abs(interp_wf));
@@ -618,11 +618,8 @@ classdef RecordingGroup < handle
                 rec_table_array = cell(1,length(values));
                 culture_metadata = [rg.Cultures{iC}.Metadata];
                 value = [culture_metadata.(metadata_field)];
-                %if length(value) >= length(values)
                 value_dev = abs(value - values');
                 value_count = sum(value_dev<=tolerance,1);
-                %                     value = value(value_count==1);
-                %if sum(value_count==1) == length(values) % Need to find a way to handle two recordings falling within the tolerance window
                 sel_rec = rg.Cultures{iC}(value_count == 1);
                 sel_md = [sel_rec.Metadata];
                 [~, sort_idx] = sort([sel_md.(metadata_field)],'ascend');
@@ -631,59 +628,64 @@ classdef RecordingGroup < handle
 
                 for iR = 1:length(sel_rec)
                     if level == "Unit"
-                        iR_table = MEArecording.getUnitFeatures(sel_rec(iR),unit_features);
+                        iR_table = MEArecording.getUnitFeatures(sel_rec(iR), unit_features);
                     elseif level == "Recording"
                         iR_table = getRecordingFeatures(sel_rec(iR), network_features, unit_features, useClustered);
                     else
                         error('Unknown level, select either "Unit" or "Recording"')
                     end
-                    iR_table.Properties.VariableNames = iR_table.Properties.VariableNames; %+ "_" + string(values(iR));
+                    iR_table.Properties.VariableNames = ...
+                        iR_table.Properties.VariableNames + "_" + string(values(iR));
                     rec_table_array{iR} = iR_table;
                 end
-                if normalization == "baseline"
-                    norm_mat = arrayfun(@(x) rec_table_array{x}.Variables./rec_table_array{1}.Variables,1:length(rec_table_array),'un',0);
-                    norm_mat = [norm_mat{2:end}]; %2:end to omit initial 1
-                    norm_mat(isnan(norm_mat)) = 0;
-                    norm_mat(isinf(norm_mat)) = max(norm_mat(norm_mat < Inf),[],'all');
 
-                    norm_table = [rec_table_array{2:end}]; %2:end to omit initial 1
-                    norm_vars = norm_table.Properties.VariableNames;
-                    culture_table = array2table(norm_mat,'VariableNames',norm_vars);
-                    culture_table(:,var(culture_table.Variables) == 0) = [];
-                    culture_table = [culture_table rec_table_array{1}(:,startsWith(string(rec_table_array{1}.Properties.VariableNames),"Waveform"))];
+                if normalization == "baseline"
+                    baseline_vals = rec_table_array{1}.Variables;
+                    norm_cells = arrayfun(@(x) rec_table_array{x}.Variables ./ baseline_vals, ...
+                        2:length(rec_table_array), 'un', 0);
+                    norm_mat = [norm_cells{:}];
+                    norm_mat(isnan(norm_mat)) = 0;
+                    norm_mat(isinf(norm_mat)) = max(norm_mat(~isinf(norm_mat)), [], 'all');
+
+                    norm_vars = [];
+                    for iR = 2:length(rec_table_array)
+                        norm_vars = [norm_vars, string(rec_table_array{iR}.Properties.VariableNames)];
+                    end
+
+                    culture_table = array2table(norm_mat, 'VariableNames', norm_vars);
+                    culture_table(:, var(culture_table.Variables) == 0) = [];
+
+                    waveform_cols = startsWith(string(rec_table_array{1}.Properties.VariableNames), "Waveform");
+                    culture_table = [culture_table, rec_table_array{1}(:, waveform_cols)];
                     culture_table_array{iC} = culture_table;
 
                 elseif normalization == "scaled"
-                    norm_mat = cellfun(@(x) x.Variables,rec_table_array,'un',0);
-                    norm_mat = cat(3,norm_mat{:});
-                    norm_mat = normalize(norm_mat,3,'range',[0 1]);
-                    re_mat = reshape(norm_mat,size(norm_mat,1),[]);
-                    norm_table = [rec_table_array{:}];
-                    norm_vars = norm_table.Properties.VariableNames;
-                    culture_table_array{iC} = array2table(re_mat,'VariableNames',norm_vars);
+                    norm_mat_cells = cellfun(@(x) x.Variables, rec_table_array, 'un', 0);
+                    norm_mat = cat(3, norm_mat_cells{:});
+                    norm_mat = normalize(norm_mat, 3, 'range', [0 1]);
+                    re_mat = reshape(norm_mat, size(norm_mat,1), []);
+
+                    norm_vars = [];
+                    for iR = 1:length(rec_table_array)
+                        norm_vars = [norm_vars, string(rec_table_array{iR}.Properties.VariableNames)];
+                    end
+
+                    culture_table_array{iC} = array2table(re_mat, 'VariableNames', norm_vars);
                 else
                     culture_table_array{iC} = vertcat(rec_table_array{:});
                 end
-                %else
-                %continue
-                %end
-                %else
-                %   continue
-                %end
             end
+
             clean_culture_tables = ~cellfun(@isempty, culture_table_array);
             culture_table_array = culture_table_array(clean_culture_tables);
             N_vars = cellfun(@width, culture_table_array);
             while length(unique(N_vars)) > 1
                 [~,min_var_idx] = min(N_vars);
                 min_vars = culture_table_array{min_var_idx}.Properties.VariableNames;
-                culture_table_array = cellfun(@(x) x(:, matches(string(x.Properties.VariableNames), string(min_vars))),culture_table_array,'un',0);
+                culture_table_array = cellfun(@(x) x(:, matches(string(x.Properties.VariableNames), string(min_vars))), culture_table_array, 'un', 0);
                 N_vars = cellfun(@width, culture_table_array);
-                %warning('Not all features present in all cultures, reduced to shared features')
             end
             feature_table = vertcat(culture_table_array{:});
-            %             keep_idx = ~isnan(std(feature_table.Variables,'omitnan')); %Remove variables with 0 variance
-            %             feature_table = feature_table(:,keep_idx);
         end
 
         function [norm_train_data, norm_test_data] = normalizeByGroup(rg, feat_mat, object_group, grouping_var, train_idx, test_idx)
@@ -812,7 +814,7 @@ classdef RecordingGroup < handle
                 elseif level == "Recording"
                     input_table = object_group.getRecordingFeatures(network_features, unit_features, useClustered);
                     n_neighbors = 100;
-                else 
+                else
                     error('Unknown level')
                 end
             else
@@ -1998,9 +2000,9 @@ classdef RecordingGroup < handle
             end
 
             if isempty(object_group)
-                aligned_wf = rg.alignWaveforms([rg.Units]);
+                aligned_wf = rg.alignWaveforms([rg.Units]); %% temp interp_factor = 1
             else
-                aligned_wf = rg.alignWaveforms(object_group);
+                aligned_wf = rg.alignWaveforms(object_group); %% temp interp_factor = 1
             end
             N_clust = length(unique(cluster_idx));
             avg_wf = cell(1,N_clust);
