@@ -747,7 +747,10 @@ classdef RecordingProcessor < handle
         %   pick up the corrected value. Does not touch the file on disk;
         %   call proc.save(file_path) afterwards to persist the change.
             new_parent = SpikeData.resolveParentPath(proc.SpikeData.InputPath, proc.SpikeData.Metadata);
-            changed = new_parent ~= proc.SpikeData.ParentPath;
+            % Old saves may store ParentPath as a 0x0 string.empty rather than a
+            % 1x1 "" — compare via char/strcmp so size mismatches don't silently
+            % produce an empty (falsy) comparison result.
+            changed = ~strcmp(char(new_parent), char(proc.SpikeData.ParentPath));
             if changed
                 proc.SpikeData.ParentPath = new_parent;
             end
