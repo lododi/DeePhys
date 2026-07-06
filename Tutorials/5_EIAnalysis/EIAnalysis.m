@@ -89,26 +89,26 @@ eia.normalizeBurstCutouts();
 %% 8  Plotting — network activity
 
 % Plot firing rate trace + burst state for culture 1
-eia.PlotNetworkActivity(1);
+eia.PlotNetworkActivity(2);
 
 %% 9  Plotting — E/I traces
 
 % Plot stacked E and I firing rate traces for culture 1 (full recording)
-eia.PlotEITraces(1);
+eia.PlotEITraces(2);
 
 % To zoom into a specific window, pass bin indices via StackCutout:
 %   eia.PlotEITraces(1, 'StackCutout', 1:round(600/eia.Parameters.Activity.BinSize));
 
 %% 10  Plotting — burst cutouts
 
-eia.PlotBurstCutouts(1);
+eia.PlotBurstCutouts(2);
 
 %% 10b  Plotting — burst-aligned raster
 %
 % Shows individual unit spike times aligned to burst peaks, sorted by cell type
 % (excitatory first, then inhibitory) and coloured accordingly.
 
-eia.PlotBurstRaster(1);
+eia.PlotBurstRaster(2);
 
 % To show only a specific burst or cluster:
 %   eia.PlotBurstRaster(1, 'BurstIndex', 3);

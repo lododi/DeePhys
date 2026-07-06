@@ -25,7 +25,7 @@ classdef GroupedCV
         NumFolds        (1,1) double    % Number of CV folds
         GroupIDs                        % (N x 1) group assignment per object
         UniqueGroups                    % Unique group values
-        GroupPartition  cvpartition     % Partition at the group level
+        GroupPartition                  % Partition at the group level
         ClassLabels                     % (N x 1) optional class labels for stratification
     end
 
@@ -75,9 +75,13 @@ classdef GroupedCV
                     mask = (gcv.GroupIDs == gcv.UniqueGroups(g));
                     group_class(g) = mode(class_labels(mask));
                 end
+                fprintf('[GroupedCV] on worker? %d | pool: %s\n', ...
+                    ~isempty(getCurrentTask()), class(gcp('nocreate')));
                 gcv.GroupPartition = cvpartition(group_class, 'KFold', gcv.NumFolds);
             else
                 gcv.ClassLabels = [];
+                fprintf('[GroupedCV] on worker? %d | pool: %s\n', ...
+                    ~isempty(getCurrentTask()), class(gcp('nocreate')));
                 gcv.GroupPartition = cvpartition(n_groups, 'KFold', gcv.NumFolds);
             end
         end

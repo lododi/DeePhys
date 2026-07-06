@@ -10,8 +10,37 @@
 
 %% 1  Build Experiment from saved processors
 
-proc_paths = {'/path/to/proc1.mat', '/path/to/proc2.mat'};
-procs = RecordingProcessor.loadMany(proc_paths);
+root_path = "/net/bs-filesvr02/export/group/hierlemann/intermediate_data/Maxtwo/phornauer"; %Root path
+path_logic = {'C*','*','w*','sorter_output','segment_*','test*'}; %Variable parts
+ei_path_list = generate_sorting_path_list(root_path, path_logic);
+fprintf("Generated %i sorting paths\n",length(ei_path_list))
+%%
+ei_path_list = string(ei_path_list);  % ensure string array, 1x595
+n = numel(ei_path_list);
+
+well_id    = nan(1, n);
+segment_id = nan(1, n);
+
+for s = 1:n
+    p = ei_path_list(s);
+
+    well_tok = regexp(p, 'well(\d+)', 'tokens', 'once');
+    seg_tok  = regexp(p, 'segment_(\d+)', 'tokens', 'once');
+
+    if ~isempty(well_tok)
+        well_id(s) = str2double(well_tok{1});
+    end
+    if ~isempty(seg_tok)
+        segment_id(s) = str2double(seg_tok{1});
+    end
+end
+
+keep_idx = find(well_id > 11 & segment_id < 6);
+
+%%
+
+good_proc_paths = ei_path_list(keep_idx);
+procs = RecordingProcessor.loadMany(fullfile(good_proc_paths,'test_proc','RecordingProcessor.mat'));
 
 exp = Experiment.fromProcessors(procs);
 
@@ -29,7 +58,7 @@ opts.KFold         = 5;
 opts.FeatureGroups = 'all';     % or ["ActivityFeatures","WaveformFeatures"]
 opts.CVLevel       = 'recording';  % group CV at recording level
 
-result_unit = exp.classify('Unit', 'Mutation', opts);
+result_unit = exp.classify('Unit', 'EI_Ratio', opts);
 
 % Inspect result — classify() returns a (1xK) ClassificationResult array, one per fold.
 summary_unit = ClassificationResult.summarizeFolds(result_unit);
@@ -45,7 +74,7 @@ opts_parent.Algorithm     = 'rf';
 opts_parent.FeatureGroups = 'all';
 opts_parent.ParentFeatures = 'ACG';   % prefer Parent_ACG* from FeatureStore
 
-result_parent = exp.classify('Unit', 'Mutation', opts_parent);
+result_parent = exp.classify('Unit', 'EI_Ratio', opts_parent);
 
 %% 4  Unit-level dimensionality reduction
 
@@ -60,12 +89,12 @@ disp(reduction);
 
 % Scatter plot coloured by Mutation
 embedding = reduction.Reduction;   % DimReductionResult stores coords in .Reduction
-labels    = string(exp.FeatureStore.UnitTable.Mutation);
+labels    = string(exp.FeatureStore.UnitTable.EI_Ratio);
 if ~isempty(embedding) && size(embedding, 2) >= 2
     figure;
     gscatter(embedding(:,1), embedding(:,2), labels);
     xlabel('UMAP 1'); ylabel('UMAP 2');
-    title('Unit UMAP — coloured by Mutation');
+    title('Unit UMAP — coloured by EI_Ratio');
 end
 
 %% 5  Recording-level classification
@@ -74,7 +103,7 @@ opts_rec = struct();
 opts_rec.Algorithm = 'rf';
 opts_rec.KFold     = 5;
 
-result_rec = exp.classify('Recording', 'Mutation', opts_rec);
+result_rec = exp.classify('Recording', 'EI_Ratio', opts_rec);
 summary_rec = ClassificationResult.summarizeFolds(result_rec);
 fprintf('Recording-level accuracy: %.2f ± %.2f\n', summary_rec.mean_accuracy, summary_rec.std_accuracy);
 
@@ -90,13 +119,13 @@ pca_result = exp.Results.DimReduction.Recording.PCA;
 % concatenated into a wide vector.
 
 opts_cult = struct();
-opts_cult.IdentityKeys   = ["ChipID", "PlatingDate"];
+opts_cult.IdentityKeys   = ["ChipID", "EI_Ratio"];
 opts_cult.GroupingVar    = 'DIV';
-opts_cult.GroupingValues = [7, 14, 21, 28];
+opts_cult.GroupingValues = [12, 17, 25, 32];
 opts_cult.Algorithm      = 'rf';
 opts_cult.KFold          = 5;
 
-result_cult = exp.classify('Culture', 'Mutation', opts_cult);
+result_cult = exp.classify('Culture', 'EI_Ratio', opts_cult);
 summary_cult = ClassificationResult.summarizeFolds(result_cult);
 fprintf('Culture-level accuracy: %.2f ± %.2f\n', summary_cult.mean_accuracy, summary_cult.std_accuracy);
 

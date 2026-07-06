@@ -24,19 +24,67 @@
 %   - DeePhys on the MATLAB path
 %   - Brain Connectivity Toolbox (BCT) on the MATLAB path (community_louvain)
 
+
+%%
+
+root_path = "/net/bs-filesvr02/export/group/hierlemann/intermediate_data/Maxtwo/phornauer"; %Root path
+path_logic = {'C*','*','w*','sorter_output','segment_*','test*'}; %Variable parts
+ei_path_list = generate_sorting_path_list(root_path, path_logic);
+fprintf("Generated %i sorting paths\n",length(ei_path_list))
+%%
+ei_path_list = string(ei_path_list);  % ensure string array, 1x595
+n = numel(ei_path_list);
+
+well_id    = nan(1, n);
+segment_id = nan(1, n);
+
+for s = 1:n
+    p = ei_path_list(s);
+
+    well_tok = regexp(p, 'well(\d+)', 'tokens', 'once');
+    seg_tok  = regexp(p, 'segment_(\d+)', 'tokens', 'once');
+
+    if ~isempty(well_tok)
+        well_id(s) = str2double(well_tok{1});
+    end
+    if ~isempty(seg_tok)
+        segment_id(s) = str2double(seg_tok{1});
+    end
+end
+
+keep_idx = find(well_id > 11 & segment_id < 6);
+
+good_proc_paths = ei_path_list(keep_idx);
+
+
 %% 1  Load data
 
-fs_file    = '/path/to/FeatureStore.mat';
-proc_paths = {'/path/to/proc1.mat', '/path/to/proc2.mat'};
+fs_file    = '/net/bs-filesvr02/export/group/hierlemann/intermediate_data/Maxtwo/phornauer/Chemogenetics/FeatureStore.mat';
+%proc_paths = {'/path/to/proc1.mat', '/path/to/proc2.mat'};
 
 fs    = FeatureStore.load(fs_file);
-procs = RecordingProcessor.loadMany(proc_paths);
-
+%procs = RecordingProcessor.loadMany(proc_paths);
+procs_paths = fullfile(good_proc_paths,'test_proc','RecordingProcessor.mat');
 % Build UnitData array (must match UnitTable row order)
 ud = [];
-for i = 1:numel(procs)
-    ud = [ud, procs(i).Units]; %#ok<AGROW>
+for i = 1:numel(good_proc_paths)
+    p = RecordingProcessor.load(procs_paths(i));
+    ud = [ud, p.Units];
+    clear p
 end
+
+N = numel(procs_paths);
+ud_cell = cell(1, N);
+
+parfor i = 1:N
+    p = RecordingProcessor.load(procs_paths(i));
+    ud_cell{i} = p.Units;
+    % no need for explicit clear p here — p goes out of scope each
+    % iteration on the worker automatically
+end
+
+ud = [ud_cell{:}];   % concatenate on the client after the loop
+clear ud_cell
 
 %% 2  Recommended parameter set
 %
@@ -334,8 +382,9 @@ fprintf('Excitatory: %d  Inhibitory: %d  Unclassified: %d\n', n_exc, n_inh, n_na
 
 params_meta = params;
 params_meta.Bootstrap.GroundTruthMethod    = 'metadata';
-params_meta.Bootstrap.LabelField           = 'CellType';   % column in UnitTable
-params_meta.Bootstrap.ResponsiveClassValue = 'inhibitory';
+params_meta.Bootstrap.LabelField           = 'EI_Ratio';   % column in UnitTable
+params_meta.Bootstrap.ResponsiveClassValue = '0:100';
+params_meta.Bootstrap.CounterexampleClassValue = '100:0';
 
 ctc_meta = CellTypeClassifier(fs, ud, params_meta);
 ctc_meta.identifyResponsiveUnits();   % reads labels from UnitTable, returns immediately
@@ -350,17 +399,15 @@ fprintf('Metadata path: %d exc, %d inh\n', ...
 %
 % HarmonizedWaveforms and HarmonizedACGs are populated by generateTrainLabels.
 
-wf  = ctc.HarmonizedWaveforms;   % (N_samples x N_units)
-acg = ctc.HarmonizedACGs;         % (N_bins   x N_units)
-sr  = ctc.HarmonizedSR;
-
+wf  = ctc_meta.HarmonizedWaveforms;
+acg = ctc_meta.HarmonizedACGs;
+sr  = ctc_meta.HarmonizedSR;
 fprintf('Waveform : %d x %d at %.0f Hz\n', size(wf,1), size(wf,2), sr);
 fprintf('ACG      : %d x %d\n', size(acg,1), size(acg,2));
+plotCellTypeFeatures(ctc_meta);
+sortACGsByPeak(ctc_meta.HarmonizedACGs');
 
-plotCellTypeFeatures(ctc);
-sortACGsByPeak(ctc.HarmonizedACGs');
-
-%% 8  Bayesian optimization of UMAP + community parameters (Phase 1)
+%% 8  Bayesian optimization of UMAP + community parameters (Phase 1) (Dose-Response Scenario)
 %
 % Run this when default parameters produce unsatisfying community structure:
 %   - diagnosticTrainLabels panel (1,2): responsive units scattered across many
@@ -420,6 +467,12 @@ fprintf('Stability: ARI = %.3f +/- %.3f\n', stability.meanARI, stability.stdARI)
 % cultures except one, classifies held-out units, and reports accuracy.
 % Low per-culture accuracy (<75%) indicates that culture's training labels
 % are inconsistent with the rest — check diagnosticTrainLabels for that culture.
+
+template_dir = fullfile(tempdir, 'ctc_umap_templates');
+if ~isfolder(template_dir)
+    mkdir(template_dir);
+end
+ctc.Parameters.UMAP.TemplateDir = template_dir;
 
 ctc.validateTrainingLabels();
 

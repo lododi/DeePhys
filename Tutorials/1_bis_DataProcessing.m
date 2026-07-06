@@ -1,0 +1,97 @@
+%% Tutorial 1 — Data Processing Pipeline (bulk)
+%
+% Covers the full pipeline from raw Kilosort output to a FeatureStore
+% ready for analysis: SpikeData → RecordingProcessor → FeatureStore.
+%
+% Prerequisites: DeePhys on the MATLAB path (run startup.m from repo root).
+%
+% Fill in the placeholder paths in Section 1 before running.
+
+%% 1 Find relevant sorted paths
+root_path = "/net/bs-filesvr02/export/group/hierlemann/intermediate_data/Maxtwo/phornauer/EI_iNeurons/"; %Root path
+path_logic = {'2*','*0*','Network','w*','sorter_output','qc_output'}; %Variable parts
+sorting_path_list = generate_sorting_path_list(root_path, path_logic);
+fprintf("Generated %i sorting paths\n",length(sorting_path_list))
+
+%% 2 Load Metadata and Kilosort output into SpikeData
+%
+% One struct per recording. Any scalar fields are stored in the FeatureStore
+% and become available for subsetting and ML labels.
+
+metadata_filepath = "/links/groups/hierlemann/Projects/lododi/EI_AdvancedSciences_Philipp/Recordings/DeePhys_Original_EI_241119.xlsx";
+
+allSD = generate_spikedata_from_sorting_path_list(sorting_path_list, metadata_filepath);
+
+% % % % If split from a parent recording, specify the parent path here.
+% % % % If omitted, SpikeData tries to auto-detect a sibling 'qc_output' folder.
+% % % if ~isempty(parent_ks_path)
+% % %     metadata.ParentInputPath = parent_ks_path;
+% % % end
+
+%% 3  Run all processing steps in sequence
+failed = {};
+parfor iPath = 1:length(allSD)
+    try
+        proc = RecordingProcessor(allSD{iPath});
+        proc.Parameters.QC.Amplitude = [0, 1000];
+        proc.runAll(); % runQC + computeUnitFeatures + computeParentFeatures
+                       %       + computeNetworkFeatures + computeConnectivity
+                       %       + computeCellTypeFeatures + computeSpatialAnalysis
+        proc_file = fullfile(allSD{iPath}.InputPath, 'RecordingProcessor.mat');
+        proc.save(proc_file);
+    catch ME
+        failed = [failed; {allSD{iPath}.InputPath, ME.message, ME.stack(1).name, ME.stack(1).line}];
+        warning('Failed: %s\n  %s (in %s line %d)', ...
+            allSD{iPath}.InputPath, ME.message, ME.stack(1).name, ME.stack(1).line);
+    end
+end
+
+% After the loop:
+if ~isempty(failed)
+    failedT = cell2table(failed, 'VariableNames', {'Path','Error','Function','Line'});
+    disp(failedT);
+end
+
+%% 13  Save and load
+
+proc_file = fullfile(save_dir, 'RecordingProcessor.mat');
+proc.save(proc_file);
+
+proc_loaded = RecordingProcessor.load(proc_file);
+fprintf('Loaded %d units from disk.\n', numel(proc_loaded.Units));
+
+% Inspect status flags
+disp(proc_loaded.Status);
+
+%% 14  Batch loading with parallel workers
+
+% Supply a cell array or string array of saved RecordingProcessor .mat paths
+proc_paths = {proc_file};   % replace with your full list
+procs = RecordingProcessor.loadMany(proc_paths);
+fprintf('Batch-loaded %d processors.\n', numel(procs));
+
+%% 15  Assemble FeatureStore from multiple processors
+
+fs = FeatureStore.fromProcessors(procs);
+
+% Three tables
+fprintf('UnitTable     : %d rows × %d cols\n', height(fs.UnitTable),      width(fs.UnitTable));
+fprintf('RecordingTable: %d rows × %d cols\n', height(fs.RecordingTable), width(fs.RecordingTable));
+fprintf('MetadataTable : %d rows × %d cols\n', height(fs.MetadataTable),  width(fs.MetadataTable));
+
+%% 16  Inspect table structure
+
+% Column names in UnitTable
+disp(string(fs.UnitTable.Properties.VariableNames)');
+
+% First few rows
+disp(fs.UnitTable(1:min(5, height(fs.UnitTable)), 1:8));
+
+%% 17  Save and load FeatureStore
+
+fs_file = fullfile(save_dir, 'FeatureStore.mat');
+fs.save(fs_file);
+
+fs2 = FeatureStore.load(fs_file);
+fprintf('Loaded FeatureStore: %d units, %d recordings.\n', ...
+    height(fs2.UnitTable), height(fs2.RecordingTable));

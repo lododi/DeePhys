@@ -45,6 +45,8 @@ function out = CO_Embed2_Dist_tau_d_expfit_meandiff(y)
 % no combination of single functions
 coder.inline('never');
 
+y = y'; %column vector fix
+
 % ------------------------------------------------------------------------------
 %% Check inputs:
 % ------------------------------------------------------------------------------

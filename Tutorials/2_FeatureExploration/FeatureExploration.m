@@ -9,7 +9,7 @@
 
 %% 1  Load a saved FeatureStore
 
-fs_file = '/path/to/FeatureStore.mat';
+fs_file = '/net/bs-filesvr02/export/group/hierlemann/intermediate_data/Maxtwo/phornauer/Chemogenetics_3/Long_exposure/well008/sorter_output/AnalyzedDeePhysTest/FeatureStore.mat';
 fs = FeatureStore.load(fs_file);
 
 fprintf('Units     : %d\n', height(fs.UnitTable));
@@ -22,7 +22,7 @@ all_cols = string(fs.UnitTable.Properties.VariableNames)';
 disp(all_cols);
 
 % Separate identity / metadata / feature columns
-id_cols   = ["UnitID", "RecordingID"];
+id_cols   = ["UnitID"; "RecordingID"];
 meta_cols = string(fs.MetadataTable.Properties.VariableNames(2:end))';  % skip RecordingID
 fprintf('\nMetadata columns:\n');  disp(meta_cols);
 
@@ -47,11 +47,14 @@ fprintf('unitMatrix("all"): %d units × %d features\n', height(X_all), width(X_a
 [X_wf, ~]   = fs.unitMatrix('WaveformFeatures');
 [X_acg, ~]  = fs.unitMatrix('ACG');
 [X_multi, ~] = fs.unitMatrix(["ActivityFeatures", "WaveformFeatures"]);
+id_wfexp = startsWith(string(fs.UnitTable.Properties.VariableNames), 'Waveform');
+X_wfexp = fs.UnitTable(:,id_wfexp);
 
 fprintf('ActivityFeatures  : %d cols\n', width(X_act));
 fprintf('WaveformFeatures  : %d cols\n', width(X_wf));
 fprintf('ACG               : %d cols\n', width(X_acg));
 fprintf('Activity+Waveform : %d cols\n', width(X_multi));
+fprintf('Waveform          : %d cols\n', width(X_wfexp));
 
 %% 5  Use parent features instead of child features
 %
@@ -124,10 +127,9 @@ fs_d21 = fs.subsetByMetadata('DIV', 21);
 fs_ko_wt = fs.subsetByMetadata('Mutation', {'WT', 'KO'});
 
 %% 10  Plot waveform overlays
-
-wf_cols = startsWith(string(X_wf.Properties.VariableNames), 'Waveform');
-if any(wf_cols)
-    wf_mat = X_wf.Variables;
+  
+if any(id_wfexp)
+    wf_mat = X_wfexp.Variables;
     figure;
     plot(wf_mat(1:min(50, height(wf_mat)), :)', 'Color', [0 0 0 0.3]);
     xlabel('Sample'); ylabel('Amplitude (norm.)');

@@ -1,29 +1,29 @@
 classdef CellTypeClassifier < handle
-% CELLTYPECLASSIFIER  Transductive graph-based cell-type classification pipeline for MEA experiments.
-%
-% Identifies inhibitory (interneuron) vs excitatory neurons using unsupervised
-% UMAP embedding with Louvain community detection and graph label propagation.
-% Two ground truth strategies are supported:
-%
-%   Drug response (GroundTruthMethod = "two_window" or "full_curve"):
-%     Units that increase firing rate in response to a stimulus serve as
-%     inhibitory ground truth. Excitatory counterexamples are inferred from
-%     the non-responsive pool via farthest-point sampling.
-%
-%   Pure culture (GroundTruthMethod = "metadata"):
-%     Cell type labels come from a UnitTable column (e.g. CellType field
-%     set from culture metadata). Both classes have explicit ground truth.
-%     No firing-rate testing is performed.
-%
-% USAGE:
-%   ctc = CellTypeClassifier(featureStore, unitDataArray, params);
-%   ctc.identifyResponsiveUnits();    % assign ground truth (FR test or metadata)
-%   ctc.generateTrainLabels();        % UMAP embedding + training label assembly
-%   ctc.classifyUnits();              % graph label propagation on UMAP graph (transductive)
-%   labels = ctc.UnitLabels;          % 1 = excitatory, 2 = inhibitory, NaN = unclassified
-%
-% MIGRATION from old API:
-%   ctc = CellTypeClassifier.fromLegacyGroup(rg, params);
+    % CELLTYPECLASSIFIER  Transductive graph-based cell-type classification pipeline for MEA experiments.
+    %
+    % Identifies inhibitory (interneuron) vs excitatory neurons using unsupervised
+    % UMAP embedding with Louvain community detection and graph label propagation.
+    % Two ground truth strategies are supported:
+    %
+    %   Drug response (GroundTruthMethod = "two_window" or "full_curve"):
+    %     Units that increase firing rate in response to a stimulus serve as
+    %     inhibitory ground truth. Excitatory counterexamples are inferred from
+    %     the non-responsive pool via farthest-point sampling.
+    %
+    %   Pure culture (GroundTruthMethod = "metadata"):
+    %     Cell type labels come from a UnitTable column (e.g. CellType field
+    %     set from culture metadata). Both classes have explicit ground truth.
+    %     No firing-rate testing is performed.
+    %
+    % USAGE:
+    %   ctc = CellTypeClassifier(featureStore, unitDataArray, params);
+    %   ctc.identifyResponsiveUnits();    % assign ground truth (FR test or metadata)
+    %   ctc.generateTrainLabels();        % UMAP embedding + training label assembly
+    %   ctc.classifyUnits();              % graph label propagation on UMAP graph (transductive)
+    %   labels = ctc.UnitLabels;          % 1 = excitatory, 2 = inhibitory, NaN = unclassified
+    %
+    % MIGRATION from old API:
+    %   ctc = CellTypeClassifier.fromLegacyGroup(rg, params);
 
     properties
         FeatureStore            FeatureStore    % Features + metadata for all units
@@ -34,14 +34,14 @@ classdef CellTypeClassifier < handle
         ResponsiveUnitDirection string          % (1 x N) "none" | "increase" | "decrease" per unit
         ResponsiveStrength      double          % (1 x N) continuous response strength (rho or effect size)
         ResponsivenessDetail    struct          % Per-unit dose-response data for diagnostics
-                                               %   .fr_matrix  (n_unique_units x n_doses) firing rates
-                                               %   .dose_values (1 x n_doses) GroupingVar values
-                                               %   .unit_ids   (1 x n_unique_units) UnitID strings
+        %   .fr_matrix  (n_unique_units x n_doses) firing rates
+        %   .dose_values (1 x n_doses) GroupingVar values
+        %   .unit_ids   (1 x n_unique_units) UnitID strings
         CounterexampleUnitIdx   logical         % (1 x N) explicit excitatory ground truth (metadata method only)
         TrainLabels             struct          % .sorted_train_ids, .sorted_y_train, etc.
-                                               %   Diagnostic fields: .resp_outlier_mask, .resp_geom_mask,
-                                               %   .ce_outlier_mask, .ce_distances_from_inh_centroid,
-                                               %   .inh_centroid, .filter_counts
+        %   Diagnostic fields: .resp_outlier_mask, .resp_geom_mask,
+        %   .ce_outlier_mask, .ce_distances_from_inh_centroid,
+        %   .inh_centroid, .filter_counts
         UnitLabels              double          % (1 x N): 1=excitatory, 2=inhibitory, NaN=unclassified
         UnitConfidence          double          % (1 x N): kNN confidence in [0,1]; 1.0 for training units
         UnitGraphConnectivity   double          % (1 x N): number of direct training-unit neighbors in UMAP graph
@@ -51,20 +51,20 @@ classdef CellTypeClassifier < handle
         HarmonizedACGs          double          % (N_bins x N_units) ACGs
         HarmonizedSR            double          % Waveform sampling rate after harmonization
         NormalizationParams     struct          % Normalization pipeline params from generateTrainLabels
-                                               %   .mu_global       (1 x F) mean from global z-score
-                                               %   .sigma_global    (1 x F) std from global z-score
-                                               %   .nan_cols        (1 x F) logical mask of removed NaN columns
-                                               %   .scale           (1 x F') max(abs) scaling vector
-                                               %   .feat_names_trimmed (1 x F') feature names after NaN removal
+        %   .mu_global       (1 x F) mean from global z-score
+        %   .sigma_global    (1 x F) std from global z-score
+        %   .nan_cols        (1 x F) logical mask of removed NaN columns
+        %   .scale           (1 x F') max(abs) scaling vector
+        %   .feat_names_trimmed (1 x F') feature names after NaN removal
         CachedExtraction        struct          % Cached waveform/ACG extraction
         NormalizedFeatures      struct          % Shared preprocessing cache (populated by buildNormalizedFeatures)
-                                               %   .X_pergroup   (n_unique x F) after NaN-fill + per-group z-score
-                                               %   .feat_names   (1 x F) feature name strings
-                                               %   .unique_ud    (1 x n_unique) UnitData, one per unique UnitID
-                                               %   .all_to_unique(1 x N_full) index from full array into unique_ud
-                                               %   .unique_to_rep(1 x n_unique) representative row in UnitDataArray
-                                               %   .subset_mask  (1 x n_unique) training-culture logical mask
-                                               %   .n_unique, .n_units_full
+        %   .X_pergroup   (n_unique x F) after NaN-fill + per-group z-score
+        %   .feat_names   (1 x F) feature name strings
+        %   .unique_ud    (1 x n_unique) UnitData, one per unique UnitID
+        %   .all_to_unique(1 x N_full) index from full array into unique_ud
+        %   .unique_to_rep(1 x n_unique) representative row in UnitDataArray
+        %   .subset_mask  (1 x n_unique) training-culture logical mask
+        %   .n_unique, .n_units_full
     end
 
     % Kept for backward compatibility (populated by fromLegacyGroup)
@@ -75,13 +75,13 @@ classdef CellTypeClassifier < handle
     methods
 
         function ctc = CellTypeClassifier(feature_store, unit_data, parameters)
-        % CELLTYPECLASSIFIER  Construct from FeatureStore + UnitData array.
-        %
-        %   ctc = CellTypeClassifier(featureStore, unitDataArray)
-        %   ctc = CellTypeClassifier(featureStore, unitDataArray, params)
-        %
-        % unit_data provides spike times for the bootstrap test; feature_store
-        % provides waveform/ACG features and metadata for UMAP.
+            % CELLTYPECLASSIFIER  Construct from FeatureStore + UnitData array.
+            %
+            %   ctc = CellTypeClassifier(featureStore, unitDataArray)
+            %   ctc = CellTypeClassifier(featureStore, unitDataArray, params)
+            %
+            % unit_data provides spike times for the bootstrap test; feature_store
+            % provides waveform/ACG features and metadata for UMAP.
             arguments
                 feature_store   FeatureStore = FeatureStore()
                 unit_data       UnitData     = UnitData.empty()
@@ -92,8 +92,8 @@ classdef CellTypeClassifier < handle
             end
             assert(numel(unit_data) == height(feature_store.UnitTable), ...
                 ['CellTypeClassifier: UnitDataArray length (%d) must match ' ...
-                 'UnitTable height (%d). Build both from the same FeatureStore ' ...
-                 'assembly call.'], numel(unit_data), height(feature_store.UnitTable));
+                'UnitTable height (%d). Build both from the same FeatureStore ' ...
+                'assembly call.'], numel(unit_data), height(feature_store.UnitTable));
             ctc.FeatureStore  = feature_store;
             ctc.UnitDataArray = unit_data;
             ctc.Parameters    = parseStructParameters(ctc.returnDefaultParams(), parameters);
@@ -101,20 +101,20 @@ classdef CellTypeClassifier < handle
         end
 
         function s = saveobj(ctc)
-        % SAVEOBJ  Custom serialization — strips non-serializable handles.
-        %
-        % The UMAP model (ctc.UMAP) is a Java/handle object from run_umap that
-        % does not survive save/load across MATLAB sessions. It is stripped here
-        % and set to [] on reload. Re-run classifyUnits() after loading if you
-        % need a fresh embedding.
-        %
-        % Computation caches (NormalizedFeatures, CachedExtraction,
-        % HarmonizedWaveforms/ACGs) are also stripped — they are regenerated
-        % automatically on the next pipeline call.
-        %
-        % All inference-critical state (TrainLabels, NormalizationParams,
-        % UnitLabels, UnitConfidence, FeatureStore, UnitDataArray, Parameters)
-        % is preserved.
+            % SAVEOBJ  Custom serialization — strips non-serializable handles.
+            %
+            % The UMAP model (ctc.UMAP) is a Java/handle object from run_umap that
+            % does not survive save/load across MATLAB sessions. It is stripped here
+            % and set to [] on reload. Re-run classifyUnits() after loading if you
+            % need a fresh embedding.
+            %
+            % Computation caches (NormalizedFeatures, CachedExtraction,
+            % HarmonizedWaveforms/ACGs) are also stripped — they are regenerated
+            % automatically on the next pipeline call.
+            %
+            % All inference-critical state (TrainLabels, NormalizationParams,
+            % UnitLabels, UnitConfidence, FeatureStore, UnitDataArray, Parameters)
+            % is preserved.
             s = struct();
             mc = ?CellTypeClassifier;
             for pi = 1:numel(mc.PropertyList)
@@ -133,11 +133,11 @@ classdef CellTypeClassifier < handle
         end
 
         function clearCache(ctc)
-        % CLEARCACHE  Invalidate all cached preprocessing and classification state.
-        %
-        % Call after changing Parameters, ResponsiveUnitIdx, or UnitDataArray
-        % post-construction to ensure subsequent pipeline calls recompute from scratch.
-        % generateTrainLabels() calls this automatically at its start.
+            % CLEARCACHE  Invalidate all cached preprocessing and classification state.
+            %
+            % Call after changing Parameters, ResponsiveUnitIdx, or UnitDataArray
+            % post-construction to ensure subsequent pipeline calls recompute from scratch.
+            % generateTrainLabels() calls this automatically at its start.
             ctc.NormalizedFeatures  = [];
             ctc.CachedExtraction    = [];
             ctc.HarmonizedWaveforms = [];
@@ -150,10 +150,10 @@ classdef CellTypeClassifier < handle
         end
 
         function validateParameters(ctc)
-        % VALIDATEPARAMETERS  Check for common parameter misconfiguration and warn.
-        %
-        % Called automatically at the end of the constructor. Can also be called
-        % manually after updating ctc.Parameters.
+            % VALIDATEPARAMETERS  Check for common parameter misconfiguration and warn.
+            %
+            % Called automatically at the end of the constructor. Can also be called
+            % manually after updating ctc.Parameters.
             p      = ctc.Parameters;
             fs     = ctc.FeatureStore;
             n_warn = 0;
@@ -163,12 +163,12 @@ classdef CellTypeClassifier < handle
                     string(p.Harmonization.ACGSource) == "FullACG"
                 all_cols = string(fs.UnitTable.Properties.VariableNames);
                 has_acg  = any(startsWith(all_cols, "Parent_ACG") | ...
-                               startsWith(all_cols, "FullACG"));
+                    startsWith(all_cols, "FullACG"));
                 if ~has_acg
                     warning('CellTypeClassifier:noFullACGColumns', ...
                         ['Harmonization.ACGSource="FullACG" but no Parent_ACG* or ' ...
-                         'FullACG* columns found in FeatureStore.UnitTable. ' ...
-                         'Will fall back to segment-level ACG computation.']);
+                        'FullACG* columns found in FeatureStore.UnitTable. ' ...
+                        'Will fall back to segment-level ACG computation.']);
                     n_warn = n_warn + 1;
                 end
             end
@@ -186,7 +186,7 @@ classdef CellTypeClassifier < handle
                 if n_few > 0
                     warning('CellTypeClassifier:fewRecordingsForFullCurve', ...
                         ['%d/%d cultures have fewer than MinRecordings=%d recordings. ' ...
-                         'They will fall back to the two_window method.'], ...
+                        'They will fall back to the two_window method.'], ...
                         n_few, numel(unique_c), p.Bootstrap.MinRecordings);
                     n_warn = n_warn + 1;
                 end
@@ -197,7 +197,7 @@ classdef CellTypeClassifier < handle
             if ~isempty(td) && ~isfolder(td)
                 warning('CellTypeClassifier:templateDirMissing', ...
                     ['UMAP.TemplateDir "%s" does not exist. ' ...
-                     'Create the directory or set Parameters.UMAP.TemplateDir to a valid path.'], td);
+                    'Create the directory or set Parameters.UMAP.TemplateDir to a valid path.'], td);
                 n_warn = n_warn + 1;
             end
 
@@ -218,13 +218,13 @@ classdef CellTypeClassifier < handle
         end
 
         function [wf, acg, sr] = getOrExtract(ctc, unit_data)
-        % GETOREXTRACT  Three-level cache: in-memory -> disk -> compute.
-        %
-        % ACG source strategy (ACGSource parameter):
-        %   "FullACG" — prefer Parent_ACG* columns from FeatureStore (pre-computed
-        %               from full parent spike train). Falls back to segment ACG if
-        %               Parent_ACG* columns are not present in the FeatureStore.
-        %   "ACG"     — always compute from UnitData.SpikeTimes (segment-level).
+            % GETOREXTRACT  Three-level cache: in-memory -> disk -> compute.
+            %
+            % ACG source strategy (ACGSource parameter):
+            %   "FullACG" — prefer Parent_ACG* columns from FeatureStore (pre-computed
+            %               from full parent spike train). Falls back to segment ACG if
+            %               Parent_ACG* columns are not present in the FeatureStore.
+            %   "ACG"     — always compute from UnitData.SpikeTimes (segment-level).
             ph    = ctc.Parameters.Harmonization;
             N     = numel(unit_data);
             cache = ctc.CachedExtraction;
@@ -234,7 +234,7 @@ classdef CellTypeClassifier < handle
                     && cache.N == N ...
                     && abs(cache.ACGBinSize - ph.ACGBinSize) < 1e-12 ...
                     && abs(cache.ACGLag - ph.ACGLag) < 1e-12 ...
-                    && cache.ACGSource == ph.ACGSource
+                    && string(cache.ACGSource) == string(ph.ACGSource)
                 wf  = cache.wf;
                 acg = cache.acg;
                 sr  = cache.sr;
@@ -295,16 +295,16 @@ classdef CellTypeClassifier < handle
         end
 
         function acg = resolveACG(ctc, unit_data, ph)
-        % RESOLVEACG  Return ACG matrix, preferring full-recording ACG columns from FeatureStore.
-        %
-        % Accepts either "FullACG*" (legacy MEArecording.mat convention) or
-        % "Parent_ACG*" column names — whichever is present in the UnitTable.
+            % RESOLVEACG  Return ACG matrix, preferring full-recording ACG columns from FeatureStore.
+            %
+            % Accepts either "FullACG*" (legacy MEArecording.mat convention) or
+            % "Parent_ACG*" column names — whichever is present in the UnitTable.
             if ph.ACGSource == "FullACG" && ~isempty(ctc.FeatureStore)
                 ut       = ctc.FeatureStore.UnitTable;
                 all_cols = string(ut.Properties.VariableNames);
                 % Accept both legacy "FullACG*" and newer "Parent_ACG*" naming
                 parent_acg_cols = all_cols(startsWith(all_cols, "Parent_ACG") | ...
-                                           startsWith(all_cols, "FullACG"));
+                    startsWith(all_cols, "FullACG"));
                 if ~isempty(parent_acg_cols)
                     % Map unit_data order to FeatureStore row order by (UnitID, RecordingID)
                     % compound key. UnitID alone is ambiguous in dose-response data where
@@ -324,7 +324,7 @@ classdef CellTypeClassifier < handle
                 % directly from the UnitData structs (legacy MEArecording path).
                 has_fullacg = ~isempty(unit_data) && ...
                     ((isstruct(unit_data) && isfield(unit_data, 'FullACG')) || ...
-                     (isobject(unit_data) && isprop(unit_data(1), 'FullACG'))) && ...
+                    (isobject(unit_data) && isprop(unit_data(1), 'FullACG'))) && ...
                     ~isempty(unit_data(1).FullACG);
                 if has_fullacg
                     % Check whether stored FullACG parameters match requested Harmonization.
@@ -334,7 +334,7 @@ classdef CellTypeClassifier < handle
                     params_known = ~isempty(stored_bs) && ~isempty(stored_lag);
                     if params_known
                         params_match = abs(stored_bs - ph.ACGBinSize) < 1e-9 ...
-                                    && abs(stored_lag - ph.ACGLag) < 1e-9;
+                            && abs(stored_lag - ph.ACGLag) < 1e-9;
                     else
                         % Parameters not stored — fall back to bin count check
                         n_bins_target = round(2 * ph.ACGLag / ph.ACGBinSize) + 1;
@@ -418,12 +418,12 @@ classdef CellTypeClassifier < handle
     methods (Static)
 
         function ctc = loadobj(s)
-        % LOADOBJ  Reconstruct CellTypeClassifier from a saved struct.
-        %
-        % Called automatically by MATLAB load(). Restores all serialized
-        % properties from the struct written by saveobj(), then warns if
-        % UnitDataArray is empty (required by classifyExternalUnits and
-        % classifyUnitsWithExternalTrain).
+            % LOADOBJ  Reconstruct CellTypeClassifier from a saved struct.
+            %
+            % Called automatically by MATLAB load(). Restores all serialized
+            % properties from the struct written by saveobj(), then warns if
+            % UnitDataArray is empty (required by classifyExternalUnits and
+            % classifyUnitsWithExternalTrain).
             ctc = CellTypeClassifier();
             if isstruct(s)
                 fn = fieldnames(s);
@@ -438,15 +438,15 @@ classdef CellTypeClassifier < handle
             if isempty(ctc.UnitDataArray)
                 warning('CellTypeClassifier:loadobj', ...
                     ['UnitDataArray is empty after load. ' ...
-                     'classifyExternalUnits() and classifyUnitsWithExternalTrain() ' ...
-                     'require UnitDataArray — restore it via ctc.UnitDataArray = ud ' ...
-                     'before calling those methods.']);
+                    'classifyExternalUnits() and classifyUnitsWithExternalTrain() ' ...
+                    'require UnitDataArray — restore it via ctc.UnitDataArray = ud ' ...
+                    'before calling those methods.']);
             end
         end
 
         function ctc = fromProcessors(proc_array, parameters)
-        % FROMPROCESSORS  Build CellTypeClassifier from RecordingProcessor array.
-        %   ctc = CellTypeClassifier.fromProcessors(procs, params)
+            % FROMPROCESSORS  Build CellTypeClassifier from RecordingProcessor array.
+            %   ctc = CellTypeClassifier.fromProcessors(procs, params)
             arguments
                 proc_array  RecordingProcessor
                 parameters  struct = struct()
@@ -464,12 +464,12 @@ classdef CellTypeClassifier < handle
         end
 
         function ctc = fromDatabase(parameters, opts)
-        % FROMDATABASE  Query RecordingDatabase and build CellTypeClassifier.
-        %   ctc = CellTypeClassifier.fromDatabase(params, Mutation="WT", DIV=[14 21])
-        %
-        %   Finds processor files at <input_path>/RecordingProcessor.mat or
-        %   <input_path>/MEArecording.mat (legacy). RecordingProcessor.load()
-        %   auto-migrates legacy format.
+            % FROMDATABASE  Query RecordingDatabase and build CellTypeClassifier.
+            %   ctc = CellTypeClassifier.fromDatabase(params, Mutation="WT", DIV=[14 21])
+            %
+            %   Finds processor files at <input_path>/RecordingProcessor.mat or
+            %   <input_path>/MEArecording.mat (legacy). RecordingProcessor.load()
+            %   auto-migrates legacy format.
             arguments
                 parameters  struct = struct()
                 opts.Mutation string = ""
@@ -515,7 +515,7 @@ classdef CellTypeClassifier < handle
         end
 
         function ctc = fromLegacyGroup(rg, parameters)
-        % FROMLEGACYGROUP  Migrate from an old RecordingGroup.
+            % FROMLEGACYGROUP  Migrate from an old RecordingGroup.
             arguments
                 rg          RecordingGroup
                 parameters  struct = struct()
@@ -549,6 +549,7 @@ classdef CellTypeClassifier < handle
             %     (e.g. "inhibitory"). Units with other non-empty values become counterexamples.
             defaultParams.Bootstrap.LabelField            = "";   % e.g. "CellType"
             defaultParams.Bootstrap.ResponsiveClassValue  = "";   % e.g. "inhibitory"
+            defaultParams.Bootstrap.CounterexampleClassValue = "";   % e.g. "excitatory"
             % two_window: compares mean FR between two recordings within a culture,
             %   selected by their GroupingVar value.
             %   PreGroupValue/PostGroupValue identify which recordings to compare.
@@ -778,20 +779,20 @@ classdef CellTypeClassifier < handle
         saveDiagnosticFigure(ctc, fig, stage_name)
 
         function [unique_ud, all_to_unique, unique_to_all] = uniqueUnitMap(ctc)
-        % UNIQUEUNITMAP  Return one representative UnitData per unique UnitID.
-        %
-        % For cultures with multiple recordings (e.g. dose-response), the same
-        % physical unit appears once per recording in UnitDataArray. Classification
-        % operates on unique units; results are then broadcast back to all rows.
-        %
-        % The representative recording is the one whose GroupingVar value matches
-        % Parameters.UMAP.GroupingValues (the baseline). Falls back to the first
-        % occurrence if no baseline recording is found.
-        %
-        % OUTPUTS:
-        %   unique_ud      - UnitData array, one entry per unique UnitID
-        %   all_to_unique  - (1 x numel(UnitDataArray)) index into unique_ud
-        %   unique_to_all  - (1 x numel(unique_ud)) cell of indices into UnitDataArray
+            % UNIQUEUNITMAP  Return one representative UnitData per unique UnitID.
+            %
+            % For cultures with multiple recordings (e.g. dose-response), the same
+            % physical unit appears once per recording in UnitDataArray. Classification
+            % operates on unique units; results are then broadcast back to all rows.
+            %
+            % The representative recording is the one whose GroupingVar value matches
+            % Parameters.UMAP.GroupingValues (the baseline). Falls back to the first
+            % occurrence if no baseline recording is found.
+            %
+            % OUTPUTS:
+            %   unique_ud      - UnitData array, one entry per unique UnitID
+            %   all_to_unique  - (1 x numel(UnitDataArray)) index into unique_ud
+            %   unique_to_all  - (1 x numel(unique_ud)) cell of indices into UnitDataArray
             ud          = ctc.UnitDataArray;
             uid_strings = string({ud.UnitID})';
             [unique_uids, ~, all_to_unique] = unique(uid_strings, 'stable');
@@ -830,10 +831,10 @@ classdef CellTypeClassifier < handle
         end
 
         function [wf, acg, sr] = extractFromUnitData(ctc, unit_data)
-        % Extract raw waveforms and ACGs from UnitData array.
-        % Returns un-harmonized waveforms at the original sampling rate.
-        % buildFeatureMatrix handles all harmonization (interpolation,
-        % alignment, normalization) so we avoid double-processing.
+            % Extract raw waveforms and ACGs from UnitData array.
+            % Returns un-harmonized waveforms at the original sampling rate.
+            % buildFeatureMatrix handles all harmonization (interpolation,
+            % alignment, normalization) so we avoid double-processing.
             ph  = ctc.Parameters.Harmonization;
             N   = numel(unit_data);
 
@@ -857,11 +858,11 @@ classdef CellTypeClassifier < handle
         end
 
         function acg = computeParentACGs(ctc, unit_data, ph)
-        % COMPUTEPARENTACGS  ACGs from concatenated spike trains across all recording segments.
-        %
-        % When OriginalUnitDataArray holds multiple recordings per unit (dose-response),
-        % concatenates spike trains from all segments of each unit (with inter-segment
-        % gaps to prevent cross-segment ISIs from contaminating the ACG).
+            % COMPUTEPARENTACGS  ACGs from concatenated spike trains across all recording segments.
+            %
+            % When OriginalUnitDataArray holds multiple recordings per unit (dose-response),
+            % concatenates spike trains from all segments of each unit (with inter-segment
+            % gaps to prevent cross-segment ISIs from contaminating the ACG).
             orig_ud         = ctc.OriginalUnitDataArray;
             all_uid_strings = string({orig_ud.UnitID});
             n_units = numel(unit_data);
@@ -897,9 +898,9 @@ classdef CellTypeClassifier < handle
     methods (Static)
 
         function binned = binnedSpikeMatrix(unit_data, time_window, bin_size)
-        % BINNEDSPIKEMATRIX  (N_units x N_bins) spike count matrix from UnitData.SpikeTimes.
-        %   Replaces Culture.getBinnedSpikeMat without requiring Culture objects.
-        %   Public so that EIAnalyzer methods can call it directly.
+            % BINNEDSPIKEMATRIX  (N_units x N_bins) spike count matrix from UnitData.SpikeTimes.
+            %   Replaces Culture.getBinnedSpikeMat without requiring Culture objects.
+            %   Public so that EIAnalyzer methods can call it directly.
             bins   = time_window(1) : bin_size : time_window(2);
             N_u    = numel(unit_data);
             binned = zeros(N_u, numel(bins) - 1);
@@ -913,18 +914,18 @@ classdef CellTypeClassifier < handle
         end
 
         function acg = computeACG(spike_times, bin_size, lag, sampling_rate)
-        % COMPUTEACG  Autocorrelogram for a single unit from spike times.
-        %
-        %   acg = CellTypeClassifier.computeACG(spike_times)
-        %   acg = CellTypeClassifier.computeACG(spike_times, bin_size, lag)
-        %   acg = CellTypeClassifier.computeACG(spike_times, bin_size, lag, sampling_rate)
-        %
-        %   spike_times   - (N x 1) spike times in seconds
-        %   bin_size      - bin width in seconds (default: 0.0005)
-        %   lag           - half-width of the ACG window in seconds (default: 0.1)
-        %   sampling_rate - recording sampling rate in Hz (default: 20000, Maxwell HDMEA)
-        %
-        %   Returns acg as (N_bins x 1).  Use computeACGs for batches.
+            % COMPUTEACG  Autocorrelogram for a single unit from spike times.
+            %
+            %   acg = CellTypeClassifier.computeACG(spike_times)
+            %   acg = CellTypeClassifier.computeACG(spike_times, bin_size, lag)
+            %   acg = CellTypeClassifier.computeACG(spike_times, bin_size, lag, sampling_rate)
+            %
+            %   spike_times   - (N x 1) spike times in seconds
+            %   bin_size      - bin width in seconds (default: 0.0005)
+            %   lag           - half-width of the ACG window in seconds (default: 0.1)
+            %   sampling_rate - recording sampling rate in Hz (default: 20000, Maxwell HDMEA)
+            %
+            %   Returns acg as (N_bins x 1).  Use computeACGs for batches.
             arguments
                 spike_times   (:,1) double
                 bin_size      (1,1) double = 0.0005
@@ -943,18 +944,18 @@ classdef CellTypeClassifier < handle
         end
 
         function acgs = computeACGs(spike_times_cell, bin_size, lag, sampling_rate)
-        % COMPUTEACGS  Autocorrelograms for multiple units from spike times.
-        %
-        %   acgs = CellTypeClassifier.computeACGs(spike_times_cell)
-        %   acgs = CellTypeClassifier.computeACGs(spike_times_cell, bin_size, lag)
-        %   acgs = CellTypeClassifier.computeACGs(spike_times_cell, bin_size, lag, sampling_rate)
-        %
-        %   spike_times_cell - (1 x N) cell array of spike-time vectors (seconds)
-        %   bin_size         - bin width in seconds (default: 0.0005)
-        %   lag              - half-width of the ACG window in seconds (default: 0.1)
-        %   sampling_rate    - recording sampling rate in Hz (default: 20000, Maxwell HDMEA)
-        %
-        %   Returns acgs as (N_bins x N), ready for classifyExternalUnits.
+            % COMPUTEACGS  Autocorrelograms for multiple units from spike times.
+            %
+            %   acgs = CellTypeClassifier.computeACGs(spike_times_cell)
+            %   acgs = CellTypeClassifier.computeACGs(spike_times_cell, bin_size, lag)
+            %   acgs = CellTypeClassifier.computeACGs(spike_times_cell, bin_size, lag, sampling_rate)
+            %
+            %   spike_times_cell - (1 x N) cell array of spike-time vectors (seconds)
+            %   bin_size         - bin width in seconds (default: 0.0005)
+            %   lag              - half-width of the ACG window in seconds (default: 0.1)
+            %   sampling_rate    - recording sampling rate in Hz (default: 20000, Maxwell HDMEA)
+            %
+            %   Returns acgs as (N_bins x N), ready for classifyExternalUnits.
             arguments
                 spike_times_cell (1,:) cell
                 bin_size         (1,1) double = 0.0005
@@ -970,21 +971,21 @@ classdef CellTypeClassifier < handle
         end
 
         function stats = evaluateLabels(y_pred, y_true)
-        % EVALUATELABELS  Classification performance against ground-truth labels.
-        %
-        %   stats = CellTypeClassifier.evaluateLabels(y_pred, y_true)
-        %
-        %   y_pred - (1 x N) predicted labels (1=exc, 2=inh, NaN=unclassified)
-        %   y_true - (1 x N) ground-truth labels (1=exc, 2=inh)
-        %
-        %   NaN entries in either vector are excluded.
-        %   Returns a struct with:
-        %     accuracy         - overall fraction correct
-        %     confusionMatrix  - (2 x 2) rows=true class, cols=predicted class
-        %     perClassAccuracy - [acc_exc, acc_inh]
-        %     classLabels      - [1, 2]
-        %     nValid           - number of non-NaN pairs evaluated
-        %     nExcluded        - number of pairs excluded (NaN in either vector)
+            % EVALUATELABELS  Classification performance against ground-truth labels.
+            %
+            %   stats = CellTypeClassifier.evaluateLabels(y_pred, y_true)
+            %
+            %   y_pred - (1 x N) predicted labels (1=exc, 2=inh, NaN=unclassified)
+            %   y_true - (1 x N) ground-truth labels (1=exc, 2=inh)
+            %
+            %   NaN entries in either vector are excluded.
+            %   Returns a struct with:
+            %     accuracy         - overall fraction correct
+            %     confusionMatrix  - (2 x 2) rows=true class, cols=predicted class
+            %     perClassAccuracy - [acc_exc, acc_inh]
+            %     classLabels      - [1, 2]
+            %     nValid           - number of non-NaN pairs evaluated
+            %     nExcluded        - number of pairs excluded (NaN in either vector)
             arguments
                 y_pred (1,:) double
                 y_true (1,:) double
@@ -1033,10 +1034,10 @@ classdef CellTypeClassifier < handle
     methods (Static, Access = private)
 
         function mask = buildCultureSubsetMask(fs, culture_indices, culture_keys)
-        % BUILDCULTURESUBSETMASK  Logical mask over UnitTable for specified culture indices.
-        %   culture_indices are 1-based indices into the list of unique cultures.
-        %   culture_keys: string array of metadata fields that define a culture identity
-        %   (default ["ChipID","PlatingDate"]).
+            % BUILDCULTURESUBSETMASK  Logical mask over UnitTable for specified culture indices.
+            %   culture_indices are 1-based indices into the list of unique cultures.
+            %   culture_keys: string array of metadata fields that define a culture identity
+            %   (default ["ChipID","PlatingDate"]).
             arguments
                 fs              FeatureStore
                 culture_indices (1,:) double
@@ -1056,7 +1057,7 @@ classdef CellTypeClassifier < handle
         end
 
         function ud_array = unitDataFromRecordingGroup(rg)
-        % Extract UnitData array from old RecordingGroup (for fromLegacyGroup).
+            % Extract UnitData array from old RecordingGroup (for fromLegacyGroup).
             unit_obj = [rg.Units];
             ud_array = UnitData.empty();
             for u = 1:numel(unit_obj)

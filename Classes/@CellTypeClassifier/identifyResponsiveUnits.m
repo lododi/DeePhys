@@ -70,6 +70,7 @@ group_field = string(ctc.Parameters.UMAP.GroupingVar);
 if strcmp(method, 'metadata')
     label_field = string(p.LabelField);
     resp_value  = string(p.ResponsiveClassValue);
+    ce_value    = p.CounterexampleClassValue;   % [] or string/string array
     resp_label  = ctc.Parameters.TrainLabels.ResponsiveClassLabel;
 
     assert(~isempty(label_field) && label_field ~= "", ...
@@ -86,13 +87,20 @@ if strcmp(method, 'metadata')
     raw_labels = string(fs.UnitTable.(label_field));
     N_total    = numel(raw_labels);
 
-    resp_idx   = raw_labels == resp_value;
-    % Counterexamples: any unit with a non-empty label that is NOT the responsive class
-    ce_idx     = ~resp_idx & raw_labels ~= "" & raw_labels ~= "NaN";
+    resp_idx = raw_labels == resp_value;
+
+    if isempty(ce_value)
+        % Default: any non-empty, non-responsive label is a counterexample
+        ce_idx = ~resp_idx & raw_labels ~= "" & raw_labels ~= "NaN";
+    else
+        % Restricted: only rows matching CounterexampleClassValue exactly
+        ce_value = string(ce_value);
+        ce_idx   = ~resp_idx & ismember(raw_labels, ce_value);
+    end
 
     ctc.ResponsiveUnitIdx       = resp_idx(:)';
     ctc.ResponsiveUnitDirection = repmat("none", 1, N_total);
-    ctc.ResponsiveStrength      = double(resp_idx(:)');  % 1 for labeled, 0 otherwise
+    ctc.ResponsiveStrength      = double(resp_idx(:)');
     ctc.CounterexampleUnitIdx   = ce_idx(:)';
 
     n_resp = sum(resp_idx);
@@ -168,8 +176,8 @@ for c = 1:numel(unique_cultures)
 
     rec_ids_here   = unique(unit_rec_ids(unit_mask), 'stable');
     use_full_curve = strcmp(method, 'full_curve') && ...
-                     numel(rec_ids_here) >= p.MinRecordings && ...
-                     ismember(group_field, meta.Properties.VariableNames);
+        numel(rec_ids_here) >= p.MinRecordings && ...
+        ismember(group_field, meta.Properties.VariableNames);
 
     if use_full_curve
         % -- Full curve: per-unit Spearman dose-response ----------------------
@@ -261,11 +269,11 @@ for c = 1:numel(unique_cultures)
             pre_hit   = find(uid_rids == string(pre_rec_id),  1);
             post_hit  = find(uid_rids == string(post_rec_id), 1);
             if isempty(pre_hit) || isempty(post_hit); continue; end
-            tw_pre_idx  = [tw_pre_idx,  uid_ud(pre_hit)];   %#ok<AGROW>
-            tw_post_idx = [tw_post_idx, uid_ud(post_hit)];  %#ok<AGROW>
+            tw_pre_idx  = [tw_pre_idx,  uid_ud(pre_hit)];
+            tw_post_idx = [tw_post_idx, uid_ud(post_hit)];
             % Use the post-recording row as the representative FeatureStore row
             post_row = uid_rows_here(post_hit);
-            tw_rows_tw = [tw_rows_tw, post_row];             %#ok<AGROW>
+            tw_rows_tw = [tw_rows_tw, post_row];
         end
 
         if isempty(tw_pre_idx); continue; end
@@ -406,74 +414,74 @@ end
 %% ── Helper: build ResponsivenessDetail struct ─────────────────────────────
 
 function detail = buildResponsivenessDetail(ctc, unit_ids_in_table, ud, ud_order, ...
-        meta, group_field, method, p)
+    meta, group_field, method, p)
 % Builds per-unit FR-vs-dose matrix for diagnostic plotting.
 % For full_curve: extracts FR across all recordings sorted by GroupingVar.
 % For two_window / metadata: stores 2-point FR (pre=col1, post=col2) with
 %   dose_values = [pre_gv, post_gv], or [0, 1] as a placeholder.
 
-    unique_ids  = unique(unit_ids_in_table, 'stable');
-    n_units     = numel(unique_ids);
-    unit_rec_ids = ctc.FeatureStore.UnitTable.RecordingID;
+unique_ids  = unique(unit_ids_in_table, 'stable');
+n_units     = numel(unique_ids);
+unit_rec_ids = ctc.FeatureStore.UnitTable.RecordingID;
 
-    if strcmp(method, 'metadata')
-        detail = struct('fr_matrix', [], 'dose_values', [], 'unit_ids', {unique_ids});
-        return
-    end
+if strcmp(method, 'metadata')
+    detail = struct('fr_matrix', [], 'dose_values', [], 'unit_ids', {unique_ids});
+    return
+end
 
-    % Gather all unique GroupingVar values (sorted)
-    if ismember(group_field, meta.Properties.VariableNames)
-        all_gv = unique(meta.(group_field), 'sorted');
-        if iscell(all_gv); all_gv = cell2mat(all_gv); end
-        all_gv = all_gv(~isnan(all_gv));
-    else
-        all_gv = [0, 1];
-    end
-    n_doses = numel(all_gv);
+% Gather all unique GroupingVar values (sorted)
+if ismember(group_field, meta.Properties.VariableNames)
+    all_gv = unique(meta.(group_field), 'sorted');
+    if iscell(all_gv); all_gv = cell2mat(all_gv); end
+    all_gv = all_gv(~isnan(all_gv));
+else
+    all_gv = [0, 1];
+end
+n_doses = numel(all_gv);
 
-    fr_matrix = nan(n_units, n_doses);
+fr_matrix = nan(n_units, n_doses);
 
-    for u = 1:n_units
-        uid      = unique_ids(u);
-        uid_rows = find(unit_ids_in_table == uid);
-        if isempty(uid_rows); continue; end
+for u = 1:n_units
+    uid      = unique_ids(u);
+    uid_rows = find(unit_ids_in_table == uid);
+    if isempty(uid_rows); continue; end
 
-        for ri = 1:numel(uid_rows)
-            row    = uid_rows(ri);
-            ud_idx = ud_order(row);
-            if ud_idx <= 0; continue; end
+    for ri = 1:numel(uid_rows)
+        row    = uid_rows(ri);
+        ud_idx = ud_order(row);
+        if ud_idx <= 0; continue; end
 
-            rec_id  = unit_rec_ids(row);
-            rec_row = meta(meta.RecordingID == rec_id, :);
-            if isempty(rec_row); continue; end
+        rec_id  = unit_rec_ids(row);
+        rec_row = meta(meta.RecordingID == rec_id, :);
+        if isempty(rec_row); continue; end
 
-            if ismember(group_field, meta.Properties.VariableNames)
-                gv = rec_row.(group_field)(1);
-                if ~isnumeric(gv); gv = str2double(string(gv)); end
-            else
-                gv = NaN;
-            end
-
-            dose_col = find(all_gv == gv, 1);
-            if isempty(dose_col); continue; end
-
-            st = ud(ud_idx).SpikeTimes;
-            dur = ud(ud_idx).RecordingDuration;
-            fr_matrix(u, dose_col) = numel(st) / max(dur, eps);
+        if ismember(group_field, meta.Properties.VariableNames)
+            gv = rec_row.(group_field)(1);
+            if ~isnumeric(gv); gv = str2double(string(gv)); end
+        else
+            gv = NaN;
         end
-    end
 
-    detail = struct('fr_matrix',  fr_matrix, ...
-                    'dose_values', all_gv(:)', ...
-                    'unit_ids',    {unique_ids});
+        dose_col = find(all_gv == gv, 1);
+        if isempty(dose_col); continue; end
+
+        st = ud(ud_idx).SpikeTimes;
+        dur = ud(ud_idx).RecordingDuration;
+        fr_matrix(u, dose_col) = numel(st) / max(dur, eps);
+    end
+end
+
+detail = struct('fr_matrix',  fr_matrix, ...
+    'dose_values', all_gv(:)', ...
+    'unit_ids',    {unique_ids});
 end
 
 %% ── Helper: per-unit full-curve dose-response ─────────────────────────────
 
 function [flag_inc, flag_dec, strengths, pvals] = fullCurveResponsive( ...
-        ud, ud_indices, unit_rows, unit_ids_in_table, ...
-        meta, rec_ids_here, unit_rec_ids, unit_mask, ud_order, ...
-        group_field, p)
+    ud, ud_indices, unit_rows, unit_ids_in_table, ...
+    meta, rec_ids_here, unit_rec_ids, unit_mask, ud_order, ...
+    group_field, p)
 % Three-stage responsive unit identification:
 %   Stage 1 — Monotonicity: |Spearman rho(dose rank, FR)| >= threshold
 %   Stage 2 — Effect size:  fold change (baseline to max dose) >= threshold
@@ -481,237 +489,237 @@ function [flag_inc, flag_dec, strengths, pvals] = fullCurveResponsive( ...
 %
 % Vectorized where possible. Stage 3 only runs on units passing stages 1+2.
 
-    direction = lower(string(p.Direction));
-    n_rows    = numel(unit_rows);
-    flag_inc  = false(1, n_rows);
-    flag_dec  = false(1, n_rows);
-    strengths = zeros(1, n_rows);
-    pvals     = nan(1, n_rows);
+direction = lower(string(p.Direction));
+n_rows    = numel(unit_rows);
+flag_inc  = false(1, n_rows);
+flag_dec  = false(1, n_rows);
+strengths = zeros(1, n_rows);
+pvals     = nan(1, n_rows);
 
-    % ── GroupingVar value per recording ──────────────────────────────────────
-    n_recs     = numel(rec_ids_here);
-    group_vals = nan(1, n_recs);
-    for ri = 1:n_recs
-        rec_row = meta(meta.RecordingID == rec_ids_here(ri), :);
-        if isempty(rec_row); continue; end
-        gv = rec_row.(group_field)(1);
-        if isnumeric(gv)
-            group_vals(ri) = gv;
-        else
-            gv_num = str2double(string(gv));
-            if ~isnan(gv_num); group_vals(ri) = gv_num; end
+% ── GroupingVar value per recording ──────────────────────────────────────
+n_recs     = numel(rec_ids_here);
+group_vals = nan(1, n_recs);
+for ri = 1:n_recs
+    rec_row = meta(meta.RecordingID == rec_ids_here(ri), :);
+    if isempty(rec_row); continue; end
+    gv = rec_row.(group_field)(1);
+    if isnumeric(gv)
+        group_vals(ri) = gv;
+    else
+        gv_num = str2double(string(gv));
+        if ~isnan(gv_num); group_vals(ri) = gv_num; end
+    end
+end
+
+valid_rec_mask = ~isnan(group_vals);
+if sum(valid_rec_mask) < 2 || numel(unique(group_vals(valid_rec_mask))) < 2
+    return
+end
+
+valid_rec_ids   = rec_ids_here(valid_rec_mask);
+gv_valid        = group_vals(valid_rec_mask)';   % (n_valid_recs × 1)
+n_valid_recs    = numel(valid_rec_ids);
+
+% ── Pre-extract RecordingID and FR for every UnitData in this culture ────
+all_rec_ids = string({ud(ud_indices).RecordingID})';          % (n_rows × 1)
+all_durs    = [ud(ud_indices).RecordingDuration]';             % (n_rows × 1)
+all_nspk    = cellfun(@numel, {ud(ud_indices).SpikeTimes})';  % (n_rows × 1)
+all_frs     = all_nspk ./ max(all_durs, eps);                 % (n_rows × 1)
+
+% ── Build FR matrix: (n_unique_uids × n_valid_recs) ──────────────────────
+row_unit_ids    = unit_ids_in_table(unit_rows);
+unique_uids     = unique(row_unit_ids, 'stable');
+n_unique        = numel(unique_uids);
+fr_matrix       = nan(n_unique, n_valid_recs);
+
+valid_rec_str = string(valid_rec_ids);
+for u = 1:n_unique
+    local_mask  = row_unit_ids == unique_uids(u);
+    uid_frs     = all_frs(local_mask);
+    uid_rec_ids = all_rec_ids(local_mask);
+    for ri = 1:n_valid_recs
+        hit = uid_rec_ids == valid_rec_str(ri);
+        if any(hit)
+            fr_matrix(u, ri) = uid_frs(find(hit, 1));
         end
     end
+end
 
-    valid_rec_mask = ~isnan(group_vals);
-    if sum(valid_rec_mask) < 2 || numel(unique(group_vals(valid_rec_mask))) < 2
-        return
+% ══════════════════════════════════════════════════════════════════════════
+% STAGE 1 — Monotonicity: Spearman rho(dose rank, FR) >= threshold
+% ══════════════════════════════════════════════════════════════════════════
+rhos = nan(n_unique, 1);
+
+full_mask = all(~isnan(fr_matrix), 2);
+if any(full_mask)
+    fr_full = fr_matrix(full_mask, :)';
+    r = corr(gv_valid, fr_full, 'Type', 'Spearman');
+    rhos(full_mask) = r';
+end
+
+% Require at least 4 valid dose levels for a meaningful rank correlation.
+% Spearman rho on 2 points is always exactly +/-1, trivially passing any threshold.
+partial_idx = find(~full_mask & sum(~isnan(fr_matrix), 2) >= 4);
+for u = partial_idx'
+    valid_pts = ~isnan(fr_matrix(u, :));
+    try
+        rhos(u) = corr(gv_valid(valid_pts), fr_matrix(u, valid_pts)', 'Type', 'Spearman');
+    catch
+        % corr() fails when <2 unique values remain after NaN removal; rhos(u) stays NaN
+    end
+end
+
+switch direction
+    case "increase"
+        pass_s1 = rhos >= p.MonotonicityThreshold;
+    case "decrease"
+        pass_s1 = rhos <= -p.MonotonicityThreshold;
+    case "both"
+        pass_s1 = abs(rhos) >= p.MonotonicityThreshold;
+end
+pass_s1(isnan(rhos)) = false;
+n_s1 = sum(pass_s1);
+
+% ══════════════════════════════════════════════════════════════════════════
+% STAGE 2 — Effect size: fold change (baseline to max dose) >= threshold
+% ══════════════════════════════════════════════════════════════════════════
+[~, baseline_col] = min(gv_valid);
+[~, maxdose_col]  = max(gv_valid);
+
+baseline_fr = fr_matrix(:, baseline_col);
+maxdose_fr  = fr_matrix(:, maxdose_col);
+
+% Fold change: ratio of higher/lower FR. Guard against zero FR.
+fr_floor    = 0.01;  % Hz — floor to avoid division by zero / infinite fold change
+base_safe   = max(baseline_fr, fr_floor);
+max_safe    = max(maxdose_fr,  fr_floor);
+
+switch direction
+    case "increase"
+        fold_change = max_safe ./ base_safe;
+    case "decrease"
+        fold_change = base_safe ./ max_safe;
+    case "both"
+        fold_change = max(max_safe ./ base_safe, base_safe ./ max_safe);
+end
+
+pass_s2 = pass_s1 & fold_change >= p.MinFoldChange & ...
+    ~isnan(baseline_fr) & ~isnan(maxdose_fr);
+n_s2 = sum(pass_s2);
+
+% ══════════════════════════════════════════════════════════════════════════
+% STAGE 3 — Bootstrap: permutation test on baseline vs max dose
+% ══════════════════════════════════════════════════════════════════════════
+s3_idx = find(pass_s2);  % indices into unique_uids
+pass_s3 = false(n_unique, 1);
+boot_pvals = nan(n_unique, 1);
+boot_inc_mask = false(n_unique, 1);  % bootstrap-determined increase direction
+boot_dec_mask = false(n_unique, 1);  % bootstrap-determined decrease direction
+
+if ~isempty(s3_idx)
+    % Identify baseline and max-dose recording IDs
+    baseline_rec = valid_rec_ids(baseline_col);
+    maxdose_rec  = valid_rec_ids(maxdose_col);
+
+    % Build matched pre/post UnitData indices for stage-3 units
+    pre_ud_idx  = [];
+    post_ud_idx = [];
+    s3_kept     = [];  % which s3_idx entries have matched pre+post
+
+    for si = 1:numel(s3_idx)
+        u = s3_idx(si);
+        uid = unique_uids(u);
+        local_mask = row_unit_ids == uid;
+        local_ud_raw = ud_order(unit_rows(local_mask));
+        valid_ud = local_ud_raw > 0;
+        local_ud = local_ud_raw(valid_ud);
+        if isempty(local_ud); continue; end
+
+        uid_rids = string({ud(local_ud).RecordingID})';
+        pre_hit  = find(uid_rids == string(baseline_rec), 1);
+        post_hit = find(uid_rids == string(maxdose_rec),  1);
+        if isempty(pre_hit) || isempty(post_hit); continue; end
+
+        pre_ud_idx  = [pre_ud_idx,  local_ud(pre_hit)];   %#ok<AGROW>
+        post_ud_idx = [post_ud_idx, local_ud(post_hit)];  %#ok<AGROW>
+        s3_kept     = [s3_kept, u];                        %#ok<AGROW>
     end
 
-    valid_rec_ids   = rec_ids_here(valid_rec_mask);
-    gv_valid        = group_vals(valid_rec_mask)';   % (n_valid_recs × 1)
-    n_valid_recs    = numel(valid_rec_ids);
+    if ~isempty(pre_ud_idx)
+        % Build binned spike matrices
+        pre_dur  = ud(pre_ud_idx(1)).RecordingDuration;
+        post_dur = ud(post_ud_idx(1)).RecordingDuration;
+        pre_win  = [0, pre_dur];
+        post_win = [0, post_dur];
 
-    % ── Pre-extract RecordingID and FR for every UnitData in this culture ────
-    all_rec_ids = string({ud(ud_indices).RecordingID})';          % (n_rows × 1)
-    all_durs    = [ud(ud_indices).RecordingDuration]';             % (n_rows × 1)
-    all_nspk    = cellfun(@numel, {ud(ud_indices).SpikeTimes})';  % (n_rows × 1)
-    all_frs     = all_nspk ./ max(all_durs, eps);                 % (n_rows × 1)
+        n_bins   = floor(min(diff(pre_win), diff(post_win)) / p.BinSize);
+        pre_win  = [0, n_bins * p.BinSize];
+        post_win = [0, n_bins * p.BinSize];
 
-    % ── Build FR matrix: (n_unique_uids × n_valid_recs) ──────────────────────
-    row_unit_ids    = unit_ids_in_table(unit_rows);
-    unique_uids     = unique(row_unit_ids, 'stable');
-    n_unique        = numel(unique_uids);
-    fr_matrix       = nan(n_unique, n_valid_recs);
+        pre_mat  = CellTypeClassifier.binnedSpikeMatrix(ud(pre_ud_idx),  pre_win,  p.BinSize);
+        post_mat = CellTypeClassifier.binnedSpikeMatrix(ud(post_ud_idx), post_win, p.BinSize);
 
-    valid_rec_str = string(valid_rec_ids);
-    for u = 1:n_unique
-        local_mask  = row_unit_ids == unique_uids(u);
-        uid_frs     = all_frs(local_mask);
-        uid_rec_ids = all_rec_ids(local_mask);
-        for ri = 1:n_valid_recs
-            hit = uid_rec_ids == valid_rec_str(ri);
-            if any(hit)
-                fr_matrix(u, ri) = uid_frs(find(hit, 1));
+        response = bootstrapFiringRateResponse(pre_mat, post_mat, ...
+            p.ConfirmationNIter, p.ConfirmationAlpha, ...
+            'UnitWisePermutation', p.UnitWisePermutation, ...
+            'NetworkCorrection',   p.NetworkCorrection);
+
+        % Convert index vectors to logical masks
+        n_tested = numel(s3_kept);
+        is_inc = false(1, n_tested);
+        is_dec = false(1, n_tested);
+        is_inc(response.increase) = true;
+        is_dec(response.decrease) = true;
+
+        % Map bootstrap results back to unique-unit indices
+        for ki = 1:n_tested
+            u = s3_kept(ki);
+            if isfield(response, 'p_values') && numel(response.p_values) >= ki
+                boot_pvals(u) = response.p_values(ki);
             end
-        end
-    end
 
-    % ══════════════════════════════════════════════════════════════════════════
-    % STAGE 1 — Monotonicity: Spearman rho(dose rank, FR) >= threshold
-    % ══════════════════════════════════════════════════════════════════════════
-    rhos = nan(n_unique, 1);
-
-    full_mask = all(~isnan(fr_matrix), 2);
-    if any(full_mask)
-        fr_full = fr_matrix(full_mask, :)';
-        r = corr(gv_valid, fr_full, 'Type', 'Spearman');
-        rhos(full_mask) = r';
-    end
-
-    % Require at least 4 valid dose levels for a meaningful rank correlation.
-    % Spearman rho on 2 points is always exactly +/-1, trivially passing any threshold.
-    partial_idx = find(~full_mask & sum(~isnan(fr_matrix), 2) >= 4);
-    for u = partial_idx'
-        valid_pts = ~isnan(fr_matrix(u, :));
-        try
-            rhos(u) = corr(gv_valid(valid_pts), fr_matrix(u, valid_pts)', 'Type', 'Spearman');
-        catch
-            % corr() fails when <2 unique values remain after NaN removal; rhos(u) stays NaN
-        end
-    end
-
-    switch direction
-        case "increase"
-            pass_s1 = rhos >= p.MonotonicityThreshold;
-        case "decrease"
-            pass_s1 = rhos <= -p.MonotonicityThreshold;
-        case "both"
-            pass_s1 = abs(rhos) >= p.MonotonicityThreshold;
-    end
-    pass_s1(isnan(rhos)) = false;
-    n_s1 = sum(pass_s1);
-
-    % ══════════════════════════════════════════════════════════════════════════
-    % STAGE 2 — Effect size: fold change (baseline to max dose) >= threshold
-    % ══════════════════════════════════════════════════════════════════════════
-    [~, baseline_col] = min(gv_valid);
-    [~, maxdose_col]  = max(gv_valid);
-
-    baseline_fr = fr_matrix(:, baseline_col);
-    maxdose_fr  = fr_matrix(:, maxdose_col);
-
-    % Fold change: ratio of higher/lower FR. Guard against zero FR.
-    fr_floor    = 0.01;  % Hz — floor to avoid division by zero / infinite fold change
-    base_safe   = max(baseline_fr, fr_floor);
-    max_safe    = max(maxdose_fr,  fr_floor);
-
-    switch direction
-        case "increase"
-            fold_change = max_safe ./ base_safe;
-        case "decrease"
-            fold_change = base_safe ./ max_safe;
-        case "both"
-            fold_change = max(max_safe ./ base_safe, base_safe ./ max_safe);
-    end
-
-    pass_s2 = pass_s1 & fold_change >= p.MinFoldChange & ...
-              ~isnan(baseline_fr) & ~isnan(maxdose_fr);
-    n_s2 = sum(pass_s2);
-
-    % ══════════════════════════════════════════════════════════════════════════
-    % STAGE 3 — Bootstrap: permutation test on baseline vs max dose
-    % ══════════════════════════════════════════════════════════════════════════
-    s3_idx = find(pass_s2);  % indices into unique_uids
-    pass_s3 = false(n_unique, 1);
-    boot_pvals = nan(n_unique, 1);
-    boot_inc_mask = false(n_unique, 1);  % bootstrap-determined increase direction
-    boot_dec_mask = false(n_unique, 1);  % bootstrap-determined decrease direction
-
-    if ~isempty(s3_idx)
-        % Identify baseline and max-dose recording IDs
-        baseline_rec = valid_rec_ids(baseline_col);
-        maxdose_rec  = valid_rec_ids(maxdose_col);
-
-        % Build matched pre/post UnitData indices for stage-3 units
-        pre_ud_idx  = [];
-        post_ud_idx = [];
-        s3_kept     = [];  % which s3_idx entries have matched pre+post
-
-        for si = 1:numel(s3_idx)
-            u = s3_idx(si);
-            uid = unique_uids(u);
-            local_mask = row_unit_ids == uid;
-            local_ud_raw = ud_order(unit_rows(local_mask));
-            valid_ud = local_ud_raw > 0;
-            local_ud = local_ud_raw(valid_ud);
-            if isempty(local_ud); continue; end
-
-            uid_rids = string({ud(local_ud).RecordingID})';
-            pre_hit  = find(uid_rids == string(baseline_rec), 1);
-            post_hit = find(uid_rids == string(maxdose_rec),  1);
-            if isempty(pre_hit) || isempty(post_hit); continue; end
-
-            pre_ud_idx  = [pre_ud_idx,  local_ud(pre_hit)];   %#ok<AGROW>
-            post_ud_idx = [post_ud_idx, local_ud(post_hit)];  %#ok<AGROW>
-            s3_kept     = [s3_kept, u];                        %#ok<AGROW>
-        end
-
-        if ~isempty(pre_ud_idx)
-            % Build binned spike matrices
-            pre_dur  = ud(pre_ud_idx(1)).RecordingDuration;
-            post_dur = ud(post_ud_idx(1)).RecordingDuration;
-            pre_win  = [0, pre_dur];
-            post_win = [0, post_dur];
-
-            n_bins   = floor(min(diff(pre_win), diff(post_win)) / p.BinSize);
-            pre_win  = [0, n_bins * p.BinSize];
-            post_win = [0, n_bins * p.BinSize];
-
-            pre_mat  = CellTypeClassifier.binnedSpikeMatrix(ud(pre_ud_idx),  pre_win,  p.BinSize);
-            post_mat = CellTypeClassifier.binnedSpikeMatrix(ud(post_ud_idx), post_win, p.BinSize);
-
-            response = bootstrapFiringRateResponse(pre_mat, post_mat, ...
-                p.ConfirmationNIter, p.ConfirmationAlpha, ...
-                'UnitWisePermutation', p.UnitWisePermutation, ...
-                'NetworkCorrection',   p.NetworkCorrection);
-
-            % Convert index vectors to logical masks
-            n_tested = numel(s3_kept);
-            is_inc = false(1, n_tested);
-            is_dec = false(1, n_tested);
-            is_inc(response.increase) = true;
-            is_dec(response.decrease) = true;
-
-            % Map bootstrap results back to unique-unit indices
-            for ki = 1:n_tested
-                u = s3_kept(ki);
-                if isfield(response, 'p_values') && numel(response.p_values) >= ki
-                    boot_pvals(u) = response.p_values(ki);
-                end
-
-                switch direction
-                    case "increase"
-                        pass_s3(u) = is_inc(ki);
-                    case "decrease"
-                        pass_s3(u) = is_dec(ki);
-                    case "both"
-                        pass_s3(u) = is_inc(ki) || is_dec(ki);
-                end
-                boot_inc_mask(u) = is_inc(ki);
-                boot_dec_mask(u) = is_dec(ki);
+            switch direction
+                case "increase"
+                    pass_s3(u) = is_inc(ki);
+                case "decrease"
+                    pass_s3(u) = is_dec(ki);
+                case "both"
+                    pass_s3(u) = is_inc(ki) || is_dec(ki);
             end
+            boot_inc_mask(u) = is_inc(ki);
+            boot_dec_mask(u) = is_dec(ki);
         end
     end
-    n_s3 = sum(pass_s3);
+end
+n_s3 = sum(pass_s3);
 
-    fprintf('  Full-curve pipeline: %d units -> S1 (monotonicity): %d -> S2 (fold change): %d -> S3 (bootstrap): %d\n', ...
-        n_unique, n_s1, n_s2, n_s3);
+fprintf('  Full-curve pipeline: %d units -> S1 (monotonicity): %d -> S2 (fold change): %d -> S3 (bootstrap): %d\n', ...
+    n_unique, n_s1, n_s2, n_s3);
 
-    % ── Map results back to unit_rows ─────────────────────────────────────────
-    for u = 1:n_unique
-        local_idx            = find(row_unit_ids == unique_uids(u));
-        strengths(local_idx) = abs(rhos(u));
-        pvals(local_idx)     = boot_pvals(u);
+% ── Map results back to unit_rows ─────────────────────────────────────────
+for u = 1:n_unique
+    local_idx            = find(row_unit_ids == unique_uids(u));
+    strengths(local_idx) = abs(rhos(u));
+    pvals(local_idx)     = boot_pvals(u);
 
-        if pass_s3(u)
-            if direction == "both"
-                % Use bootstrap-determined direction; fall back to Spearman rho
-                % sign only when bootstrap did not test this unit (no pre+post match).
-                if boot_inc_mask(u)
-                    flag_inc(local_idx) = true;
-                elseif boot_dec_mask(u)
-                    flag_dec(local_idx) = true;
-                elseif rhos(u) > 0
-                    flag_inc(local_idx) = true;
-                else
-                    flag_dec(local_idx) = true;
-                end
-            elseif direction == "increase"
+    if pass_s3(u)
+        if direction == "both"
+            % Use bootstrap-determined direction; fall back to Spearman rho
+            % sign only when bootstrap did not test this unit (no pre+post match).
+            if boot_inc_mask(u)
+                flag_inc(local_idx) = true;
+            elseif boot_dec_mask(u)
+                flag_dec(local_idx) = true;
+            elseif rhos(u) > 0
                 flag_inc(local_idx) = true;
             else
                 flag_dec(local_idx) = true;
             end
+        elseif direction == "increase"
+            flag_inc(local_idx) = true;
+        else
+            flag_dec(local_idx) = true;
         end
     end
+end
 end

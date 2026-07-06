@@ -71,7 +71,7 @@ y_spl = ppval(ppSpline,1:N);
 % y_spl_2 = ppSpline.coefs(2,1)*x.^3 + ppSpline.coefs(2,2)*x.^2 + ppSpline.coefs(2,3)*x.^1 + ppSpline.coefs(2,4);
 % y_spl = [y_spl_1, y_spl_2];
 
-y = y_in - y_spl';
+y = y_in - y_spl; % untransposed y_spl
 
 %% 2. Compute autocorrelations up to 1/3 the length of the time series.
 acmax = ceil(N/3); % compute autocorrelations up to this lag

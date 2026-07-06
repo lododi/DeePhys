@@ -26,26 +26,25 @@ end
 
 assert(~isempty(ctc.ResponsiveUnitIdx), ...
     'Run identifyResponsiveUnits() before classifyUnitsEnsemble().');
-
 p_ens   = ctc.Parameters.Ensemble;
 seeds   = p_ens.Seeds;
 N       = numel(seeds);
 n_units = numel(ctc.UnitDataArray);
+orig_seed    = ctc.Parameters.RNGSeed;
+orig_enabled = ctc.Parameters.Ensemble.Enabled;   % <-- save
 
-orig_seed = ctc.Parameters.RNGSeed;
+ctc.Parameters.Ensemble.Enabled = false;           % <-- disable before per-seed calls
 
 label_matrix = nan(N, n_units);
-
 fprintf('Ensemble classification: %d runs (seeds: %s, MinAgreement=%.2f)\n', ...
     N, num2str(seeds), p_ens.MinAgreement);
 
 for r = 1:N
     fprintf('  Run %d/%d (seed=%d)...\n', r, N, seeds(r));
     ctc.Parameters.RNGSeed = seeds(r);
-
     try
         ctc.generateTrainLabels();
-        ctc.classifyUnits();
+        ctc.classifyUnits();          % now runs the real single-seed body
         label_matrix(r, :) = ctc.UnitLabels;
     catch ME
         warning('CellTypeClassifier:ensembleRunFailed', ...
@@ -53,8 +52,10 @@ for r = 1:N
     end
 end
 
-% Restore original seed
-ctc.Parameters.RNGSeed = orig_seed;
+% Restore original state — always runs since the loop itself has no
+% uncaught-error exit path (each run is wrapped in try/catch above)
+ctc.Parameters.RNGSeed          = orig_seed;
+ctc.Parameters.Ensemble.Enabled = orig_enabled;
 
 % -- Majority vote -----------------------------------------------------------
 final_labels     = nan(1, n_units);

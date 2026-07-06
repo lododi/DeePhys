@@ -19,9 +19,8 @@
 
 %% A1  Convert MEArecording.mat to RecordingProcessor
 
-old_mat  = '/path/to/old/MEArecording.mat';
-save_dir = '/path/to/new';
-
+old_mat  = '/net/bs-filesvr02/export/group/hierlemann/intermediate_data/Maxtwo/phornauer/Chemogenetics/Low_dose_range/well001/sorter_output/segment_0/MEArecording.mat';
+save_dir = '/net/bs-filesvr02/export/group/hierlemann/intermediate_data/Maxtwo/phornauer/Chemogenetics/Low_dose_range/well001/sorter_output/segment_0/test_proc';
 proc = RecordingProcessor.fromLegacyMat(old_mat);
 
 fprintf('Migrated %d units from %s\n', numel(proc.Units), old_mat);

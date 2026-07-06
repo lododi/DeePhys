@@ -265,7 +265,7 @@ function u = lsqsolve(A,y,beta)
 
 
 % Solution
-u = y/A;
+u = y'/A; % transposed y
 
 % % Robust fitting
 % if beta > 0

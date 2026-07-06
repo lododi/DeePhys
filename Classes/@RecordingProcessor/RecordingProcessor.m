@@ -101,7 +101,7 @@ classdef RecordingProcessor < handle
             su  = sd.SpikeUnits;
             N   = size(tmpl, 1);
             unit_spike_times = arrayfun(@(x) st(su == x), 1:N, 'un', 0);
-            firing_rates     = cellfun(@numel, unit_spike_times) / sd.Duration;
+            firing_rates     = (cellfun(@numel, unit_spike_times) / sd.Duration)';
 
             % QC checks
             if isempty(p.QC.GoodUnits)

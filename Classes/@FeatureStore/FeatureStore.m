@@ -1,33 +1,33 @@
 classdef FeatureStore < handle
-% FEATURESTORE  Table-centric container for features across a collection of recordings.
-%
-% The central architectural piece of DeePhys v2. ALL downstream analysis (ML,
-% statistics, plotting) works with FeatureStore tables — never with MEArecording
-% or RecordingGroup objects.
-%
-% Three tables:
-%   UnitTable       — one row per unit.      Columns: UnitID, RecordingID, metadata, features.
-%   RecordingTable  — one row per recording. Columns: RecordingID, metadata, features.
-%   MetadataTable   — one row per recording. Columns: RecordingID, all metadata fields.
-%
-% USAGE:
-%   % From new pipeline
-%   fs = FeatureStore.fromProcessors([proc1, proc2, ...]);
-%
-%   % Migration from old objects
-%   fs = FeatureStore.fromLegacyRecordings(mearec_array);
-%
-%   % Save / load
-%   fs.save('experiment.mat');
-%   fs = FeatureStore.load('experiment.mat');
-%
-%   % Subsetting
-%   fs2 = fs.subsetByMetadata('Mutation', {'WT','HET'});
-%
-%   % Feature matrices for ML
-%   [X, unitIDs] = fs.unitMatrix('all');
-%   Y = fs.UnitTable.Mutation;
-%   result = Classifier.classify(X, Y, opts);
+    % FEATURESTORE  Table-centric container for features across a collection of recordings.
+    %
+    % The central architectural piece of DeePhys v2. ALL downstream analysis (ML,
+    % statistics, plotting) works with FeatureStore tables — never with MEArecording
+    % or RecordingGroup objects.
+    %
+    % Three tables:
+    %   UnitTable       — one row per unit.      Columns: UnitID, RecordingID, metadata, features.
+    %   RecordingTable  — one row per recording. Columns: RecordingID, metadata, features.
+    %   MetadataTable   — one row per recording. Columns: RecordingID, all metadata fields.
+    %
+    % USAGE:
+    %   % From new pipeline
+    %   fs = FeatureStore.fromProcessors([proc1, proc2, ...]);
+    %
+    %   % Migration from old objects
+    %   fs = FeatureStore.fromLegacyRecordings(mearec_array);
+    %
+    %   % Save / load
+    %   fs.save('experiment.mat');
+    %   fs = FeatureStore.load('experiment.mat');
+    %
+    %   % Subsetting
+    %   fs2 = fs.subsetByMetadata('Mutation', {'WT','HET'});
+    %
+    %   % Feature matrices for ML
+    %   [X, unitIDs] = fs.unitMatrix('all');
+    %   Y = fs.UnitTable.Mutation;
+    %   result = Classifier.classify(X, Y, opts);
 
     properties
         UnitTable       table   % one row per unit:      UnitID, RecordingID, metadata cols, feature cols
@@ -45,7 +45,7 @@ classdef FeatureStore < handle
     methods (Static)
 
         function fs = fromProcessors(proc_array)
-        % FROMPROCESSORS  Assemble FeatureStore from RecordingProcessor array.
+            % FROMPROCESSORS  Assemble FeatureStore from RecordingProcessor array.
             arguments
                 proc_array RecordingProcessor
             end
@@ -81,7 +81,7 @@ classdef FeatureStore < handle
                     meta_row = FeatureStore.metadataStructToRow(p.SpikeData.Metadata);
                     meta_rep = repmat(meta_row, height(uft), 1);
                     id_tbl   = table(unit_ids, repmat(string(rec_id), height(uft), 1), ...
-                                     'VariableNames', {'UnitID','RecordingID'});
+                        'VariableNames', {'UnitID','RecordingID'});
                     unit_tables{i} = [id_tbl, meta_rep, uft];
                 end
 
@@ -102,10 +102,10 @@ classdef FeatureStore < handle
         end
 
         function fs = fromLegacyRecordings(rec_array, unit_features, network_features)
-        % FROMLEGACYRECORDINGS  Build FeatureStore from an old MEArecording array.
-        %
-        % Migration path: works alongside existing MEArecording objects without
-        % requiring a full reprocess. Features are extracted via FeatureAssembly.
+            % FROMLEGACYRECORDINGS  Build FeatureStore from an old MEArecording array.
+            %
+            % Migration path: works alongside existing MEArecording objects without
+            % requiring a full reprocess. Features are extracted via FeatureAssembly.
             arguments
                 rec_array       MEArecording
                 unit_features   string = "all"
@@ -132,7 +132,7 @@ classdef FeatureStore < handle
                         unit_ids = string({obj.Units.StableID})';
                         meta_rep = repmat(meta_row, numel(obj.Units), 1);
                         id_u     = table(unit_ids, repmat(rec_id, numel(obj.Units), 1), ...
-                                         'VariableNames', {'UnitID','RecordingID'});
+                            'VariableNames', {'UnitID','RecordingID'});
                         unit_tables{i} = [id_u, meta_rep, uft];
                     catch ME
                         warning('FeatureStore:fromLegacy', ...
@@ -155,7 +155,7 @@ classdef FeatureStore < handle
         end
 
         function fs = load(file_path)
-        % LOAD  Restore a FeatureStore saved with fs.save().
+            % LOAD  Restore a FeatureStore saved with fs.save().
             arguments
                 file_path (1,1) string
             end
@@ -179,7 +179,7 @@ classdef FeatureStore < handle
     methods
 
         function save(fs, file_path)
-        % SAVE  Write tables to a .mat file. Reload with FeatureStore.load().
+            % SAVE  Write tables to a .mat file. Reload with FeatureStore.load().
             arguments
                 fs        FeatureStore
                 file_path (1,1) string
@@ -199,7 +199,7 @@ classdef FeatureStore < handle
     methods
 
         function fs2 = subset(fs, recording_ids)
-        % SUBSET  Return a new FeatureStore containing only the specified recordings.
+            % SUBSET  Return a new FeatureStore containing only the specified recordings.
             arguments
                 fs            FeatureStore
                 recording_ids string
@@ -216,10 +216,10 @@ classdef FeatureStore < handle
         end
 
         function fs2 = subsetByMetadata(fs, field_name, values)
-        % SUBSETBYMETADATA  Subset recordings by a metadata field value.
-        %
-        %   fs2 = fs.subsetByMetadata('Mutation', {'WT','HET'})
-        %   fs2 = fs.subsetByMetadata('DIV', [14, 21])
+            % SUBSETBYMETADATA  Subset recordings by a metadata field value.
+            %
+            %   fs2 = fs.subsetByMetadata('Mutation', {'WT','HET'})
+            %   fs2 = fs.subsetByMetadata('DIV', [14, 21])
             arguments
                 fs         FeatureStore
                 field_name (1,1) string
@@ -248,14 +248,14 @@ classdef FeatureStore < handle
     methods
 
         function report = summarizeFeatureGroups(fs)
-        % SUMMARIZEFEATUREGROUPS  Report which feature groups are present in UnitTable and RecordingTable.
-        %
-        %   report = fs.summarizeFeatureGroups()
-        %   Prints a summary and returns a struct with unit-level and recording-level coverage.
-        %
-        % Useful after FeatureStore.fromProcessors() to confirm all expected analyses
-        % have been run. Groups with zero features likely correspond to analyses not yet
-        % executed (e.g., no connectivity columns if computeConnectivity() was not called).
+            % SUMMARIZEFEATUREGROUPS  Report which feature groups are present in UnitTable and RecordingTable.
+            %
+            %   report = fs.summarizeFeatureGroups()
+            %   Prints a summary and returns a struct with unit-level and recording-level coverage.
+            %
+            % Useful after FeatureStore.fromProcessors() to confirm all expected analyses
+            % have been run. Groups with zero features likely correspond to analyses not yet
+            % executed (e.g., no connectivity columns if computeConnectivity() was not called).
             unit_cols = string(fs.UnitTable.Properties.VariableNames);
             rec_cols  = string(fs.RecordingTable.Properties.VariableNames);
 
@@ -309,26 +309,26 @@ classdef FeatureStore < handle
     methods
 
         function [X, unit_ids] = unitMatrix(fs, feature_groups, parent_features, options)
-        % UNITMATRIX  Return feature table and unit IDs for ML.
-        %
-        %   [X, unit_ids] = fs.unitMatrix('all')
-        %   [X, unit_ids] = fs.unitMatrix(["ActivityFeatures","ReferenceWaveform"])
-        %   [X, unit_ids] = fs.unitMatrix('all', ["ACG"])          % prefer parent ACGs
-        %   [X, unit_ids] = fs.unitMatrix('all', "all")             % all parent features
-        %   [X, unit_ids] = fs.unitMatrix('all', FeatureSet="core") % core features only
-        %   [X, unit_ids] = fs.unitMatrix('all', MinFiringRate=0.1) % exclude quiet units
-        %
-        % X is a table with only feature columns (no identity/metadata cols).
-        % Output column names are always child names (ACG1, not Parent_ACG1).
-        % unit_ids is a string vector of UnitIDs corresponding to rows.
-        %
-        % FeatureSet options (see FeatureCatalog for definitions):
-        %   "full" (default) — all features in each group (backwards compatible)
-        %   "core"           — curated non-redundant, interpretable scalar features
-        %
-        % MinFiringRate: exclude units whose FiringRate feature is below this threshold
-        %   (Hz). Default 0 = no filtering. Recommended: 0.1 Hz to exclude
-        %   near-silent units with unreliable waveform/ISI/ACG features.
+            % UNITMATRIX  Return feature table and unit IDs for ML.
+            %
+            %   [X, unit_ids] = fs.unitMatrix('all')
+            %   [X, unit_ids] = fs.unitMatrix(["ActivityFeatures","ReferenceWaveform"])
+            %   [X, unit_ids] = fs.unitMatrix('all', ["ACG"])          % prefer parent ACGs
+            %   [X, unit_ids] = fs.unitMatrix('all', "all")             % all parent features
+            %   [X, unit_ids] = fs.unitMatrix('all', FeatureSet="core") % core features only
+            %   [X, unit_ids] = fs.unitMatrix('all', MinFiringRate=0.1) % exclude quiet units
+            %
+            % X is a table with only feature columns (no identity/metadata cols).
+            % Output column names are always child names (ACG1, not Parent_ACG1).
+            % unit_ids is a string vector of UnitIDs corresponding to rows.
+            %
+            % FeatureSet options (see FeatureCatalog for definitions):
+            %   "full" (default) — all features in each group (backwards compatible)
+            %   "core"           — curated non-redundant, interpretable scalar features
+            %
+            % MinFiringRate: exclude units whose FiringRate feature is below this threshold
+            %   (Hz). Default 0 = no filtering. Recommended: 0.1 Hz to exclude
+            %   near-silent units with unreliable waveform/ISI/ACG features.
             arguments
                 fs              FeatureStore
                 feature_groups  string = "all"
@@ -363,16 +363,16 @@ classdef FeatureStore < handle
             unit_ids = tbl.UnitID;
         end
 
-        function [X, rec_ids] = recordingMatrix(fs, feature_groups, parent_features)
-        % RECORDINGMATRIX  Return feature table and recording IDs for ML.
-        %
-        %   [X, rec_ids] = fs.recordingMatrix('all')
-        %   [X, rec_ids] = fs.recordingMatrix('all', ["ACG"])
-        %   [X, rec_ids] = fs.recordingMatrix('all', FeatureSet="core")
-        %
-        % FeatureSet options (see FeatureCatalog for definitions):
-        %   "full" (default) — all features in each group (backwards compatible)
-        %   "core"           — curated non-redundant, interpretable scalar features
+        function [X, rec_ids] = recordingMatrix(fs, feature_groups, parent_features,options)
+            % RECORDINGMATRIX  Return feature table and recording IDs for ML.
+            %
+            %   [X, rec_ids] = fs.recordingMatrix('all')
+            %   [X, rec_ids] = fs.recordingMatrix('all', ["ACG"])
+            %   [X, rec_ids] = fs.recordingMatrix('all', FeatureSet="core")
+            %
+            % FeatureSet options (see FeatureCatalog for definitions):
+            %   "full" (default) — all features in each group (backwards compatible)
+            %   "core"           — curated non-redundant, interpretable scalar features
             arguments
                 fs              FeatureStore
                 feature_groups  string = "all"
@@ -385,17 +385,17 @@ classdef FeatureStore < handle
         end
 
         function [X, culture_ids] = cultureMatrix(fs, identity_keys, grouping_var, grouping_values, normalization, feature_groups, parent_features, options)
-        % CULTUREMATRIX  Culture-level feature table (one row per culture).
-        %
-        % Groups recordings by identity_keys (e.g. ["ChipID","PlatingDate"]),
-        % selects recordings at each value of grouping_var (e.g. DIV = [7 14 21 28]),
-        % and returns a wide table with feature columns suffixed by grouping value.
-        %
-        % Replaces aggregateCultureFeatureTables + Culture object traversal.
-        %
-        % FeatureSet options (see FeatureCatalog for definitions):
-        %   "full" (default) — all features in each group (backwards compatible)
-        %   "core"           — curated non-redundant, interpretable scalar features
+            % CULTUREMATRIX  Culture-level feature table (one row per culture).
+            %
+            % Groups recordings by identity_keys (e.g. ["ChipID","PlatingDate"]),
+            % selects recordings at each value of grouping_var (e.g. DIV = [7 14 21 28]),
+            % and returns a wide table with feature columns suffixed by grouping value.
+            %
+            % Replaces aggregateCultureFeatureTables + Culture object traversal.
+            %
+            % FeatureSet options (see FeatureCatalog for definitions):
+            %   "full" (default) — all features in each group (backwards compatible)
+            %   "core"           — curated non-redundant, interpretable scalar features
             arguments
                 fs              FeatureStore
                 identity_keys   string              = ["ChipID","PlatingDate"]
@@ -520,11 +520,11 @@ classdef FeatureStore < handle
     methods (Access = private)
 
         function cols = selectFeatureCols(fs, tbl, feature_groups, feature_set)
-        % Return column names matching the requested feature groups, then
-        % optionally filtered to the named feature set (e.g. "core").
-        %
-        %   cols = fs.selectFeatureCols(tbl, feature_groups)
-        %   cols = fs.selectFeatureCols(tbl, feature_groups, "core")
+            % Return column names matching the requested feature groups, then
+            % optionally filtered to the named feature set (e.g. "core").
+            %
+            %   cols = fs.selectFeatureCols(tbl, feature_groups)
+            %   cols = fs.selectFeatureCols(tbl, feature_groups, "core")
             if nargin < 4
                 feature_set = "full";
             end
@@ -547,8 +547,8 @@ classdef FeatureStore < handle
                         case "WaveformFeatures"
                             % Actual column names written by inferWaveformFeatures
                             wf_names = ["AUC_peak_1","AUC_trough","AUC_peak_2", ...
-                                        "Rise","Decay","HalfWidth","Asymmetry", ...
-                                        "T2Pdelay","T2Pratio"];
+                                "Rise","Decay","HalfWidth","Asymmetry", ...
+                                "T2Pdelay","T2Pratio"];
                             selected = selected | ismember(all_cols, wf_names);
                         case "RegularityFeatures"
                             names = Unit.returnFeatureNames("reg");
@@ -564,7 +564,7 @@ classdef FeatureStore < handle
                         case "GraphFeatures"
                             % Per-unit graph columns: suffixed by algorithm (e.g. _CCG, _STTC)
                             graph_roots = ["ClusteringCoefficient","LocalEfficiency", ...
-                                           "EigenCentrality","Betweenness"];
+                                "EigenCentrality","Betweenness"];
                             for r = graph_roots
                                 selected = selected | startsWith(all_cols, r);
                             end
@@ -579,9 +579,9 @@ classdef FeatureStore < handle
                             selected = selected | startsWith(all_cols,"FullACG");
                         case "NetworkBurst"
                             names = ["MeanInterBurstInterval","BurstDuration", ...
-                                     "RiseTime","FallTime","PeakFR","StdFR", ...
-                                     "StdBurstDuration","StdInterBurstInterval", ...
-                                     "IntraFiringRate","InterFiringRate"];
+                                "RiseTime","FallTime","PeakFR","StdFR", ...
+                                "StdBurstDuration","StdInterBurstInterval", ...
+                                "IntraFiringRate","InterFiringRate"];
                             selected = selected | ismember(all_cols, names);
                         case "NetworkRegularity"
                             names = Unit.returnFeatureNames("reg");
@@ -596,16 +596,16 @@ classdef FeatureStore < handle
                         case "NetworkGraph"
                             % Network-level graph columns: suffixed by algorithm (e.g. _CCG)
                             graph_roots = ["Density","Assortativity","RichClub", ...
-                                           "GlobalEfficiency","Modularity","SmallWorldness"];
+                                "GlobalEfficiency","Modularity","SmallWorldness"];
                             for r = graph_roots
                                 selected = selected | startsWith(all_cols, r);
                             end
                         case "CellTypeGraph"
                             % Cell-type-stratified graph features (_EE, _II suffixed)
                             graph_roots = ["Density","Assortativity","RichClub", ...
-                                           "GlobalEfficiency","Modularity","SmallWorldness", ...
-                                           "ClusteringCoefficient","LocalEfficiency", ...
-                                           "EigenCentrality","Betweenness"];
+                                "GlobalEfficiency","Modularity","SmallWorldness", ...
+                                "ClusteringCoefficient","LocalEfficiency", ...
+                                "EigenCentrality","Betweenness"];
                             for r = graph_roots
                                 selected = selected | (startsWith(all_cols, r) & ...
                                     (endsWith(all_cols, "_EE") | endsWith(all_cols, "_II")));
@@ -615,36 +615,36 @@ classdef FeatureStore < handle
                             selected = selected | startsWith(all_cols, "CrossTypeConnections");
                         case "CellTypeBalance"
                             names = ["ExcitatoryFraction","MeanFiringRate_E", ...
-                                     "MeanFiringRate_I","FiringRateRatio_EI"];
+                                "MeanFiringRate_I","FiringRateRatio_EI"];
                             selected = selected | ismember(all_cols, names);
                         case "CellTypeActivity"
                             names = ["MeanCV2_E","MeanCV2_I", ...
-                                     "MeanFanoFactor_E","MeanFanoFactor_I", ...
-                                     "MeanLvR_E","MeanLvR_I", ...
-                                     "MeanISIBimodality_E","MeanISIBimodality_I"];
+                                "MeanFanoFactor_E","MeanFanoFactor_I", ...
+                                "MeanLvR_E","MeanLvR_I", ...
+                                "MeanISIBimodality_E","MeanISIBimodality_I"];
                             selected = selected | ismember(all_cols, names);
                         case "CellTypeBurst"
                             names = ["BurstLeadTime_E","BurstLeadTime_I","BurstLeadFraction", ...
-                                     "MeanBurstFraction_E","MeanBurstFraction_I", ...
-                                     "IntraBurstRate_E","IntraBurstRate_I", ...
-                                     "BurstParticipation_E","BurstParticipation_I", ...
-                                     "BurstParticipationRate"];
+                                "MeanBurstFraction_E","MeanBurstFraction_I", ...
+                                "IntraBurstRate_E","IntraBurstRate_I", ...
+                                "BurstParticipation_E","BurstParticipation_I", ...
+                                "BurstParticipationRate"];
                             selected = selected | ismember(all_cols, names);
                         case "CellTypeCorrelation"
                             names = ["MeanSTTC_EE","MeanSTTC_II","MeanSTTC_EI", ...
-                                     "STTCSynchronyIndex", ...
-                                     "MeanSTTC_WithinType","MeanSTTC_CrossType"];
+                                "STTCSynchronyIndex", ...
+                                "MeanSTTC_WithinType","MeanSTTC_CrossType"];
                             selected = selected | ismember(all_cols, names);
                         case "SpatialFeatures"
                             sp_names = ["ConvexHullArea", "ChipCoverage", ...
-                                        "MeanPairwiseDistance", "CentroidSpread", ...
-                                        "SpatialMixingIndex", "MeanFractionExcNN_E", "MeanFractionExcNN_I", ...
-                                        "DistFromCentroid", "FractionExcNN", "FractionInhNN", ...
-                                        "SpatialFRMoransI", "CenterPeripheryFR_ratio", ...
-                                        "RipleysL_max", "ClusterScale", ...
-                                        "SpatialDecayTau", "DistanceFCCorrelation", "MeanFC_NearNeighbors", ...
-                                        "SpatialEIVariability", "SpatialEIMoransI", ...
-                                        "BurstOriginDispersion", "MeanBurstPropagationSpeed", "BurstOriginExcFraction"];
+                                "MeanPairwiseDistance", "CentroidSpread", ...
+                                "SpatialMixingIndex", "MeanFractionExcNN_E", "MeanFractionExcNN_I", ...
+                                "DistFromCentroid", "FractionExcNN", "FractionInhNN", ...
+                                "SpatialFRMoransI", "CenterPeripheryFR_ratio", ...
+                                "RipleysL_max", "ClusterScale", ...
+                                "SpatialDecayTau", "DistanceFCCorrelation", "MeanFC_NearNeighbors", ...
+                                "SpatialEIVariability", "SpatialEIMoransI", ...
+                                "BurstOriginDispersion", "MeanBurstPropagationSpeed", "BurstOriginExcFraction"];
                             selected = selected | ismember(all_cols, sp_names);
                         otherwise
                             % Treat as a column-name prefix
@@ -676,15 +676,15 @@ classdef FeatureStore < handle
         end
 
         function out_tbl = resolveParentFeatures(~, tbl, child_cols, parent_features)
-        % RESOLVEPARENTFEATURES  Build output table, sourcing from Parent_* where requested.
-        %
-        % Output always has child column names (ACG1, not Parent_ACG1) so feature
-        % matrices from datasets with and without parent features are compatible.
-        % Fallback: if Parent_X doesn't exist, child X is used silently.
-        %
-        %   out_tbl = fs.resolveParentFeatures(tbl, cols, ["ACG"])
-        %   out_tbl = fs.resolveParentFeatures(tbl, cols, "all")
-        %   out_tbl = fs.resolveParentFeatures(tbl, cols, string.empty)  % child only
+            % RESOLVEPARENTFEATURES  Build output table, sourcing from Parent_* where requested.
+            %
+            % Output always has child column names (ACG1, not Parent_ACG1) so feature
+            % matrices from datasets with and without parent features are compatible.
+            % Fallback: if Parent_X doesn't exist, child X is used silently.
+            %
+            %   out_tbl = fs.resolveParentFeatures(tbl, cols, ["ACG"])
+            %   out_tbl = fs.resolveParentFeatures(tbl, cols, "all")
+            %   out_tbl = fs.resolveParentFeatures(tbl, cols, string.empty)  % child only
             all_cols = string(tbl.Properties.VariableNames);
             out_tbl  = tbl(:, []);   % empty table with same row count
             for i = 1:numel(child_cols)
@@ -693,7 +693,7 @@ classdef FeatureStore < handle
                 use_parent = ~isempty(parent_features) ...
                     && ismember(parent_col, all_cols) ...
                     && (any(parent_features == "all") || ...
-                        FeatureStore.isParentGroup(col, parent_features));
+                    FeatureStore.isParentGroup(col, parent_features));
                 if use_parent
                     out_tbl.(col) = tbl.(parent_col);
                 else
@@ -703,7 +703,7 @@ classdef FeatureStore < handle
         end
 
         function mf = inferMetadataFields(fs)
-        % Infer metadata field names from MetadataTable (all cols except RecordingID).
+            % Infer metadata field names from MetadataTable (all cols except RecordingID).
             all_cols = string(fs.MetadataTable.Properties.VariableNames);
             mf = all_cols(all_cols ~= "RecordingID");
         end
@@ -713,8 +713,8 @@ classdef FeatureStore < handle
     methods (Static, Access = private)
 
         function tf = isParentGroup(col_name, parent_groups)
-        % ISPARENTGROUP  True if col_name belongs to one of the requested parent groups.
-        %   Maps column naming conventions to feature group strings.
+            % ISPARENTGROUP  True if col_name belongs to one of the requested parent groups.
+            %   Maps column naming conventions to feature group strings.
             tf = false;
             for g = 1:numel(parent_groups)
                 pg = parent_groups(g);
@@ -751,12 +751,12 @@ classdef FeatureStore < handle
     methods (Static)
 
         function culture_ids = getCultureIDsForUnits(unit_rec_ids, meta_table, identity_keys)
-        % GETCULTUREIDSFORUNITS  Map each unit's RecordingID to a culture ID string.
-        %
-        %   culture_ids = FeatureStore.getCultureIDsForUnits(unitTable.RecordingID, ...
-        %                     fs.MetadataTable, ["ChipID","PlatingDate"])
-        %
-        % Returns a string vector the same length as unit_rec_ids.
+            % GETCULTUREIDSFORUNITS  Map each unit's RecordingID to a culture ID string.
+            %
+            %   culture_ids = FeatureStore.getCultureIDsForUnits(unitTable.RecordingID, ...
+            %                     fs.MetadataTable, ["ChipID","PlatingDate"])
+            %
+            % Returns a string vector the same length as unit_rec_ids.
             culture_ids_per_rec = FeatureStore.buildCultureIDs(meta_table, identity_keys);
             [~, loc] = ismember(string(unit_rec_ids), string(meta_table.RecordingID));
             culture_ids = repmat("", numel(unit_rec_ids), 1);
@@ -765,12 +765,12 @@ classdef FeatureStore < handle
         end
 
         function culture_ids = buildCultureIDs(meta_table, identity_keys)
-        % BUILDCULTUREIDS  Build a string culture ID per recording row.
-        %
-        %   culture_ids = FeatureStore.buildCultureIDs(fs.MetadataTable, ["ChipID","PlatingDate"])
-        %
-        % Concatenates the values of identity_keys columns with "_" separator.
-        % Returns a (N_recordings x 1) string vector.
+            % BUILDCULTUREIDS  Build a string culture ID per recording row.
+            %
+            %   culture_ids = FeatureStore.buildCultureIDs(fs.MetadataTable, ["ChipID","PlatingDate"])
+            %
+            % Concatenates the values of identity_keys columns with "_" separator.
+            % Returns a (N_recordings x 1) string vector.
             n = height(meta_table);
             parts = cell(n, numel(identity_keys));
             for k = 1:numel(identity_keys)
@@ -790,7 +790,7 @@ classdef FeatureStore < handle
     methods (Static, Access = private)
 
         function validateIntegrity(fs)
-        % Warn on referential integrity violations after table assembly.
+            % Warn on referential integrity violations after table assembly.
             if isempty(fs.MetadataTable) || isempty(fs.MetadataTable.Properties.VariableNames)
                 return
             end
@@ -830,7 +830,7 @@ classdef FeatureStore < handle
         end
 
         function fs = assembleFromCells(unit_cells, recording_cells, metadata_cells)
-        % Vertically concatenate cell arrays of tables (handling missing rows).
+            % Vertically concatenate cell arrays of tables (handling missing rows).
             unit_cells      = unit_cells(~cellfun(@isempty, unit_cells));
             recording_cells = recording_cells(~cellfun(@isempty, recording_cells));
             metadata_cells  = metadata_cells(~cellfun(@isempty, metadata_cells));
@@ -864,9 +864,9 @@ classdef FeatureStore < handle
         end
 
         function T = stackTables(tbl_cells)
-        % Vertically concatenate tables that may have different columns.
-        % Missing columns are filled with NaN (numeric) or "" (string/categorical),
-        % with type inferred by peeking at a table that already has the column.
+            % Vertically concatenate tables that may have different columns.
+            % Missing columns are filled with NaN (numeric) or "" (string/categorical),
+            % with type inferred by peeking at a table that already has the column.
             var_cells = cellfun(@(t) string(t.Properties.VariableNames)', tbl_cells, 'un', 0);
             all_vars  = unique(vertcat(var_cells{:}));
             padded    = cellfun(@(t) FeatureStore.padTable(t, all_vars, tbl_cells), tbl_cells, 'un', 0);
@@ -874,7 +874,7 @@ classdef FeatureStore < handle
         end
 
         function t = padTable(t, all_vars, ref_tables)
-        % Add missing columns to t, with fill value inferred from ref_tables.
+            % Add missing columns to t, with fill value inferred from ref_tables.
             existing = string(t.Properties.VariableNames);
             missing  = all_vars(~ismember(all_vars, existing));
             for i = 1:numel(missing)
@@ -889,8 +889,8 @@ classdef FeatureStore < handle
         end
 
         function tf = isStringColumn(col_name, tables)
-        % Return true if col_name holds string/char/categorical data in any ref table.
-        % Checks ALL tables to avoid type mismatch from first-table-wins heuristic.
+            % Return true if col_name holds string/char/categorical data in any ref table.
+            % Checks ALL tables to avoid type mismatch from first-table-wins heuristic.
             n_string  = 0;
             n_numeric = 0;
             for k = 1:numel(tables)
@@ -914,7 +914,10 @@ classdef FeatureStore < handle
         end
 
         function meta_row = metadataStructToRow(meta_struct)
-        % Convert a metadata struct to a single-row table.
+            % Convert a metadata struct to a single-row table.
+            % Fields to always exclude, even if present in the source metadata struct
+            excluded_fields = ["ChipWellKey"];
+
             fns = fieldnames(meta_struct);
             if isempty(fns)
                 meta_row = table();
@@ -923,8 +926,13 @@ classdef FeatureStore < handle
             row_data = {};
             var_names = {};
             for i = 1:numel(fns)
+                if ismember(fns{i}, excluded_fields)
+                    continue
+                end
                 v = meta_struct.(fns{i});
-                % Skip fields that are non-scalar or complex types
+                if iscell(v) && isscalar(v)
+                    v = v{1};
+                end
                 if isstruct(v) || iscell(v) || (isnumeric(v) && ~isscalar(v)) || isa(v, 'datetime')
                     continue
                 end

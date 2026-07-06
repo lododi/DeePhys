@@ -10,14 +10,14 @@
 %% 1  Setup — fill in your paths
 
 % Path to one Kilosort output directory (must contain spike_times.npy etc.)
-ks_path = '/path/to/kilosort_output';
+ks_path = '/net/bs-filesvr02/export/group/hierlemann/intermediate_data/Maxtwo/phornauer/EI_iNeurons/250212/T002523/Network/well012/sorter_output'; %/links/groups/hierlemann/Projects/ADHD/AnalyzedData/datastore/.cache/70000140/data/well_20/KS-2-251030-0148-70000140-0.01-5-75';
 
 % Optional: path to a parent (concatenated) recording.
 % Set to '' if your recording was not split from a longer session.
-parent_ks_path = '/path/to/parent_kilosort_output';
+parent_ks_path = '';
 
 % Where to save the processed RecordingProcessor and FeatureStore files
-save_dir = '/path/to/save';
+save_dir = '/net/bs-filesvr02/export/group/hierlemann/intermediate_data/Maxtwo/phornauer/EI_iNeurons/250212/T002523/Network/well012/sorter_output';
 
 %% 2  Metadata struct
 %
@@ -25,12 +25,13 @@ save_dir = '/path/to/save';
 % and become available for subsetting and ML labels.
 
 metadata = struct();
-metadata.ChipID       = 'Chip001';
-metadata.PlatingDate  = '2024-01-15';
-metadata.RecordingDate = '2024-02-05';  % DIV computed automatically if absent
-metadata.DIV          = 21;
-metadata.Mutation     = 'WT';
-metadata.Concentration = 0;
+metadata.ChipID         = 'T002523';
+metadata.PlatingDate    = '2024-11-10';
+metadata.RecordingDate  = '2025-02-12';  % DIV computed automatically if absent
+metadata.DIV            = 90;
+metadata.Mutation       = 'WT';
+metadata.Concentration  = 0;
+metadata.EI_Ratio       = '75:25';
 
 % If split from a parent recording, specify the parent path here.
 % If omitted, SpikeData tries to auto-detect a sibling 'qc_output' folder.
@@ -55,7 +56,7 @@ fprintf('Parent path : %s\n', sd.ParentPath);
 % All unspecified fields fall back to RecordingProcessor.returnDefaultParams().
 
 proc = RecordingProcessor(sd);
-
+proc.Parameters.QC.Amplitude = [0,1000];
 % Alternatively, load directly from disk in one step:
 %   proc = RecordingProcessor.fromKilosort(ks_path, metadata);
 
@@ -65,12 +66,12 @@ proc.runQC();
 
 fprintf('Units after QC: %d\n', numel(proc.Units));
 
-% Inspect individual units
-if ~isempty(proc.Units)
-    u = proc.Units(1);
-    fprintf('  Unit 1 — TemplateID: %d, N spikes: %d, FR: %.2f Hz\n', ...
-        u.TemplateID, numel(u.SpikeTimes), numel(u.SpikeTimes) / sd.Duration);
-end
+% % Inspect individual units
+% if ~isempty(proc.Units)
+%     u = proc.Units(1);
+%     fprintf('  Unit 1 — TemplateID: %d, N spikes: %d, FR: %.2f Hz\n', ...
+%         u.TemplateID, numel(u.SpikeTimes), numel(u.SpikeTimes) / sd.Duration);
+% end
 
 %% 6  Compute per-unit features
 %
@@ -175,26 +176,27 @@ end
 %
 % Two standalone functions are available for spatial inspection:
 %
-%   plotSpatialUnitMap(proc.SpikeData.ElectrodeCoordinates, proc.Units, ...
-%       proc.CellTypeLabels);
+  % plotSpatialUnitMap(proc.SpikeData.ElectrodeCoordinates, proc.Units, ...
+  %     proc.CellTypeLabels);
 %   % → Scatter map of units at reference electrode positions, colored by cell type.
 %   %   Pass [] as third argument to skip cell-type coloring.
 %
-%   [~, viz_data] = computeSpatialEIBalance( ...
-%       proc.SpikeData.ElectrodeCoordinates, proc.Units, proc.CellTypeLabels);
-%   plotSpatialEIBalance(viz_data, proc.SpikeData.ElectrodeCoordinates);
+  % [~, viz_data] = computeSpatialEIBalance( ...
+  %     proc.SpikeData.ElectrodeCoordinates, proc.Units, proc.CellTypeLabels);
+  % plotSpatialEIBalance(viz_data, proc.SpikeData.ElectrodeCoordinates);
 %   % → Kernel-smoothed heatmap of local excitatory fraction across the MEA chip.
 
 %% 12  Shortcut: run all steps in sequence
 
 proc2 = RecordingProcessor(sd);
+proc2.Parameters.QC.Amplitude = [0,1000];
 proc2.runAll();   % runQC + computeUnitFeatures + computeParentFeatures
                   %       + computeNetworkFeatures + computeConnectivity
                   %       + computeCellTypeFeatures + computeSpatialAnalysis
 
 %% 13  Save and load
-
-proc_file = fullfile(save_dir, 'RecordingProcessor.mat');
+save_dir = '/net/bs-filesvr02/export/group/hierlemann/intermediate_data/Maxtwo/phornauer/EI_iNeurons/250212/T002523/Network/well008/sorter_output';
+proc_file_1 = fullfile(save_dir, 'RecordingProcessor.mat');
 proc.save(proc_file);
 
 proc_loaded = RecordingProcessor.load(proc_file);
@@ -206,7 +208,7 @@ disp(proc_loaded.Status);
 %% 14  Batch loading with parallel workers
 
 % Supply a cell array or string array of saved RecordingProcessor .mat paths
-proc_paths = {proc_file};   % replace with your full list
+proc_paths = {proc_file_1,proc_file_2,proc_file_3,proc_file_4,proc_file_5};   % replace with your full list
 procs = RecordingProcessor.loadMany(proc_paths);
 fprintf('Batch-loaded %d processors.\n', numel(procs));
 
@@ -228,6 +230,7 @@ disp(string(fs.UnitTable.Properties.VariableNames)');
 disp(fs.UnitTable(1:min(5, height(fs.UnitTable)), 1:8));
 
 %% 17  Save and load FeatureStore
+save_dir = '/net/bs-filesvr02/export/group/hierlemann/intermediate_data/Maxtwo/phornauer/Chemogenetics/';
 
 fs_file = fullfile(save_dir, 'FeatureStore.mat');
 fs.save(fs_file);
