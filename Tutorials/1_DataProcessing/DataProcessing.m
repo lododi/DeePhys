@@ -125,7 +125,7 @@ proc.computeConnectivity();
 % ExcitatoryFraction, MeanFiringRate_E/I.
 %
 % Requires CellTypeLabels to be set (populated by Tutorial 4 after running
-% CellTypeClassifier.classifyUnits and RecordingProcessor.applyLabelsFromClassifier).
+% CellTypeClassifier.classify and RecordingProcessor.applyLabelsFromClassifier).
 % If CellTypeLabels is empty or all-NaN, this step returns immediately with no
 % new columns added.
 %
@@ -206,30 +206,74 @@ fprintf('Loaded %d units from disk.\n', numel(proc_loaded.Units));
 disp(proc_loaded.Status);
 
 %% 14  Batch loading with parallel workers
+%
+% RecordingProcessor.loadMany() loads multiple saved .mat files in parallel
+% using parfor. It auto-detects legacy MEArecording format and migrates on
+% the fly, so you can point it at a mix of old and new .mat files.
+%
+% Input: string array or cell array of .mat file paths.
 
-% Supply a cell array or string array of saved RecordingProcessor .mat paths
-proc_paths = {proc_file_1,proc_file_2,proc_file_3,proc_file_4,proc_file_5};   % replace with your full list
+proc_paths = {proc_file_1, proc_file_2, proc_file_3, proc_file_4, proc_file_5};
 procs = RecordingProcessor.loadMany(proc_paths);
 fprintf('Batch-loaded %d processors.\n', numel(procs));
 
+% You can also load from a directory listing:
+%   all_mats = dir(fullfile(data_dir, '**/RecordingProcessor.mat'));
+%   all_paths = fullfile({all_mats.folder}, {all_mats.name});
+%   procs = RecordingProcessor.loadMany(all_paths);
+
 %% 15  Assemble FeatureStore from multiple processors
+%
+% FeatureStore.fromProcessors concatenates all unit/recording/metadata tables
+% from the loaded processors into a single FeatureStore. Processors with
+% empty SpikeData or no units are skipped automatically.
 
 fs = FeatureStore.fromProcessors(procs);
 
-% Three tables
-fprintf('UnitTable     : %d rows × %d cols\n', height(fs.UnitTable),      width(fs.UnitTable));
-fprintf('RecordingTable: %d rows × %d cols\n', height(fs.RecordingTable), width(fs.RecordingTable));
-fprintf('MetadataTable : %d rows × %d cols\n', height(fs.MetadataTable),  width(fs.MetadataTable));
+fprintf('UnitTable     : %d rows x %d cols\n', height(fs.UnitTable),      width(fs.UnitTable));
+fprintf('RecordingTable: %d rows x %d cols\n', height(fs.RecordingTable), width(fs.RecordingTable));
+fprintf('MetadataTable : %d rows x %d cols\n', height(fs.MetadataTable),  width(fs.MetadataTable));
 
-%% 16  Inspect table structure
+%% 16  Batch legacy conversion
+%
+% RecordingProcessor.convertMany() converts legacy MEArecording.mat files
+% in parallel and saves each result to disk, keeping memory bounded.
+% Returns string array of output paths (empty string for failed conversions).
+%
+% This is the recommended way to migrate a large collection of old recordings.
 
-% Column names in UnitTable
+% legacy_mats = {'/path/to/rec1/MEArecording.mat', ...
+%                '/path/to/rec2/MEArecording.mat', ...
+%                '/path/to/rec3/MEArecording.mat'};
+% converted_dir = '/path/to/converted';
+%
+% converted_paths = RecordingProcessor.convertMany(legacy_mats, converted_dir);
+%
+% % Load all converted processors
+% good = converted_paths(converted_paths ~= "");
+% procs_converted = RecordingProcessor.loadMany(good);
+% fprintf('Converted and loaded %d processors.\n', numel(procs_converted));
+
+%% 17  Chunked FeatureStore assembly for large datasets
+%
+% When the number of recordings is large (hundreds+), loading all processors
+% simultaneously may exceed available memory. buildFeatureStoreInChunks
+% loads them in batches, builds a FeatureStore per chunk, saves to disk,
+% then combines the lightweight table-only results.
+%
+% Adjust chunk_size based on available RAM (lower = less memory, slower).
+
+% chunk_size = 20;
+% fs_large = buildFeatureStoreInChunks(proc_paths, out_dir, chunk_size);
+% fs_large.save(fullfile(out_dir, 'FeatureStore.mat'));
+
+%% 18  Inspect table structure
+
 disp(string(fs.UnitTable.Properties.VariableNames)');
-
-% First few rows
 disp(fs.UnitTable(1:min(5, height(fs.UnitTable)), 1:8));
 
-%% 17  Save and load FeatureStore
+%% 19  Save and load FeatureStore
+
 save_dir = '/net/bs-filesvr02/export/group/hierlemann/intermediate_data/Maxtwo/phornauer/Chemogenetics/';
 
 fs_file = fullfile(save_dir, 'FeatureStore.mat');

@@ -1,41 +1,46 @@
-%%
-root_path = "/net/bs-filesvr02/export/group/hierlemann/intermediate_data/Maxtwo/phornauer"; %Root path
-path_logic = {'C*','*Week_1','w*','sorter_output','segment_*'}; %Variable parts
-ei_path_list = generate_sorting_path_list(root_path, path_logic);
-fprintf("Generated %i sorting paths\n",length(ei_path_list))
+%% Batch Legacy Conversion — using RecordingProcessor.convertMany
+%
+% Discovers legacy MEArecording.mat files under a root directory and
+% converts them to RecordingProcessor format in parallel.
+%
+% Fill in root_path, path_logic, and save_dir before running.
 
-%%
-root_path = "/net/bs-filesvr02/export/group/hierlemann/intermediate_data/Maxtwo/lododi2/Neuropixel_Dataset/251121"; %Root path
-path_logic = {'T*','w*','*'}; %Variable parts
-ei_path_list = generate_sorting_path_list(root_path, path_logic);
-fprintf("Generated %i sorting paths\n",length(ei_path_list))
+%% 1  Discover legacy recordings
 
-%%
-for i = 1:length(ei_path_list)
-    for k = 0:6
-        save_dir = fullfile(ei_path_list(i),"segment_"+k,'test_proc');
-        if ~exist(save_dir, 'dir')
-            mkdir(save_dir)
-        end
-        proc = RecordingProcessor.fromLegacyMat(string(fullfile(ei_path_list(i),"segment_"+k,"MEArecording.mat")));
-        fprintf('Migrated %d units from %s\n', numel(proc.Units), old_mat);
-        fprintf('Status: QC=%s UnitFeatures=%s NetworkFeatures=%s\n', ...
-            proc.Status.QC, proc.Status.UnitFeatures, proc.Status.NetworkFeatures);
-        proc_file = fullfile(save_dir, 'RecordingProcessor.mat');
-        proc.save(proc_file);
+root_path  = "/path/to/your/data";
+path_logic = {'C*', '*', 'w*', 'sorter_output', 'segment_*'};
+save_dir   = "/path/to/save/converted";
+
+sorting_paths = generate_sorting_path_list(root_path, path_logic);
+fprintf("Found %d sorting paths\n", numel(sorting_paths));
+
+%% 2  Build list of MEArecording.mat paths
+
+mat_paths = fullfile(string(sorting_paths), "MEArecording.mat");
+exists    = isfile(mat_paths);
+mat_paths = mat_paths(exists);
+fprintf("%d MEArecording.mat files found\n", numel(mat_paths));
+
+%% 3  Batch convert using convertMany
+
+proc_paths = RecordingProcessor.convertMany(mat_paths, save_dir);
+
+%% 4  Report results
+
+n_ok     = sum(proc_paths ~= "");
+n_failed = sum(proc_paths == "");
+fprintf('\nConversion complete: %d succeeded, %d failed.\n', n_ok, n_failed);
+
+if n_failed > 0
+    failed_idx = find(proc_paths == "");
+    fprintf('\nFailed files:\n');
+    for i = 1:numel(failed_idx)
+        fprintf('  %s\n', mat_paths(failed_idx(i)));
     end
 end
 
-%%
-for i = 1:length(ei_path_list)
-    save_dir = fullfile(ei_path_list(i),'test_proc');
-    if ~exist(save_dir, 'dir')
-            mkdir(save_dir)
-    end
-    proc = RecordingProcessor.fromLegacyMat(string(fullfile(ei_path_list(i),"MEArecording.mat")));
-    fprintf('Migrated %d units from %s\n', numel(proc.Units), string(fullfile(ei_path_list(i),"MEArecording.mat")));
-    fprintf('Status: QC=%s UnitFeatures=%s NetworkFeatures=%s\n', ...
-        proc.Status.QC, proc.Status.UnitFeatures, proc.Status.NetworkFeatures);
-    proc_file = fullfile(save_dir, 'RecordingProcessor.mat');
-    proc.save(proc_file);
-end
+%% 5  Optional: assemble FeatureStore from converted processors
+
+% good_paths = proc_paths(proc_paths ~= "");
+% fs = buildFeatureStoreInChunks(good_paths, save_dir, 20);
+% fs.save(fullfile(save_dir, 'FeatureStore.mat'));

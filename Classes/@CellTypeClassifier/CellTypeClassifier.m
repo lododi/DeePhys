@@ -19,8 +19,13 @@ classdef CellTypeClassifier < handle
     %   ctc = CellTypeClassifier(featureStore, unitDataArray, params);
     %   ctc.identifyResponsiveUnits();    % assign ground truth (FR test or metadata)
     %   ctc.generateTrainLabels();        % UMAP embedding + training label assembly
-    %   ctc.classifyUnits();              % graph label propagation on UMAP graph (transductive)
+    %   ctc.classify();                   % routes to classifyUnits or classifyUnitsEnsemble
     %   labels = ctc.UnitLabels;          % 1 = excitatory, 2 = inhibitory, NaN = unclassified
+    %
+    % Classification methods:
+    %   classify()              - top-level entry: routes based on Ensemble.Enabled
+    %   classifyUnits()         - single-seed graph label propagation (always single run)
+    %   classifyUnitsEnsemble() - majority vote across multiple RNG seeds
     %
     % MIGRATION from old API:
     %   ctc = CellTypeClassifier.fromLegacyGroup(rg, params);
@@ -105,7 +110,7 @@ classdef CellTypeClassifier < handle
             %
             % The UMAP model (ctc.UMAP) is a Java/handle object from run_umap that
             % does not survive save/load across MATLAB sessions. It is stripped here
-            % and set to [] on reload. Re-run classifyUnits() after loading if you
+            % and set to [] on reload. Re-run classify() after loading if you
             % need a fresh embedding.
             %
             % Computation caches (NormalizedFeatures, CachedExtraction,

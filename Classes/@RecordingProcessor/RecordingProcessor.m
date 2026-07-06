@@ -848,6 +848,55 @@ classdef RecordingProcessor < handle
             end
         end
 
+        function proc_paths = convertMany(mat_paths, save_dir, parameters)
+        % CONVERTMANY  Batch-convert legacy MEArecording.mat files to RecordingProcessor.
+        %
+        %   proc_paths = RecordingProcessor.convertMany(mat_paths, save_dir)
+        %   proc_paths = RecordingProcessor.convertMany(mat_paths, save_dir, params)
+        %
+        %   Converts each legacy .mat file via fromLegacyMat and saves the result
+        %   to save_dir. Uses parfor for parallel conversion. Returns string array
+        %   of saved RecordingProcessor paths (empty string for failed conversions).
+        %
+        %   Each processor is saved to <save_dir>/rec_<NNN>/RecordingProcessor.mat
+        %   where NNN is the 1-based index, keeping memory usage bounded.
+            arguments
+                mat_paths           % string/cell array of legacy .mat paths
+                save_dir   (1,1) string
+                parameters (1,1) struct = struct()
+            end
+            if ischar(mat_paths) || isstring(mat_paths)
+                mat_paths = cellstr(mat_paths);
+            end
+            N = numel(mat_paths);
+            proc_paths = strings(N, 1);
+
+            if ~isfolder(save_dir)
+                mkdir(save_dir);
+            end
+
+            fprintf('convertMany: converting %d legacy recordings...\n', N);
+            parfor i = 1:N
+                try
+                    proc = RecordingProcessor.fromLegacyMat(string(mat_paths{i}), parameters);
+                    out_dir = fullfile(save_dir, sprintf('rec_%03d', i));
+                    if ~isfolder(out_dir)
+                        mkdir(out_dir);
+                    end
+                    out_file = fullfile(out_dir, 'RecordingProcessor.mat');
+                    proc.save(out_file);
+                    proc_paths(i) = out_file;
+                    fprintf('  [%d/%d] Converted %s -> %s\n', i, N, mat_paths{i}, out_file);
+                catch ME
+                    warning('RecordingProcessor:convertMany', ...
+                        '[%d/%d] Failed to convert %s: %s', i, N, mat_paths{i}, ME.message);
+                end
+            end
+
+            n_ok = sum(proc_paths ~= "");
+            fprintf('convertMany: %d/%d converted successfully.\n', n_ok, N);
+        end
+
         function proc = fromKilosort(input_path, metadata, parameters)
         % FROMKILOSORT  Create a RecordingProcessor from Kilosort output.
         %   Does NOT run any analysis — call proc.runAll() or individual steps.

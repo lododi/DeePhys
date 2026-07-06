@@ -17,7 +17,7 @@
 load('/path/to/ctc.mat', 'ctc');
 
 % Verify the classifier is fully trained
-assert(~isempty(ctc.UnitLabels), 'Run classifyUnits() before constructing EIAnalyzer.');
+assert(~isempty(ctc.UnitLabels), 'Run classify() before constructing EIAnalyzer.');
 
 %% 2  Construct EIAnalyzer
 

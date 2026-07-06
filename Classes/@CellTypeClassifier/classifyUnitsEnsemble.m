@@ -10,7 +10,6 @@ function classifyUnitsEnsemble(ctc)
 % Units that fail to reach MinAgreement across seeds are set to NaN.
 %
 % Parameters are read from ctc.Parameters.Ensemble:
-%   Enabled      - must be true to call this method (checked internally)
 %   Seeds        - (1 x N) RNG seeds, one per run (default [42,1042,2042,3042,4042])
 %   MinAgreement - minimum vote fraction for label assignment (default 0.6)
 %
@@ -30,10 +29,7 @@ p_ens   = ctc.Parameters.Ensemble;
 seeds   = p_ens.Seeds;
 N       = numel(seeds);
 n_units = numel(ctc.UnitDataArray);
-orig_seed    = ctc.Parameters.RNGSeed;
-orig_enabled = ctc.Parameters.Ensemble.Enabled;   % <-- save
-
-ctc.Parameters.Ensemble.Enabled = false;           % <-- disable before per-seed calls
+orig_seed = ctc.Parameters.RNGSeed;
 
 label_matrix = nan(N, n_units);
 fprintf('Ensemble classification: %d runs (seeds: %s, MinAgreement=%.2f)\n', ...
@@ -44,7 +40,7 @@ for r = 1:N
     ctc.Parameters.RNGSeed = seeds(r);
     try
         ctc.generateTrainLabels();
-        ctc.classifyUnits();          % now runs the real single-seed body
+        ctc.classifyUnits();
         label_matrix(r, :) = ctc.UnitLabels;
     catch ME
         warning('CellTypeClassifier:ensembleRunFailed', ...
@@ -52,10 +48,7 @@ for r = 1:N
     end
 end
 
-% Restore original state — always runs since the loop itself has no
-% uncaught-error exit path (each run is wrapped in try/catch above)
-ctc.Parameters.RNGSeed          = orig_seed;
-ctc.Parameters.Ensemble.Enabled = orig_enabled;
+ctc.Parameters.RNGSeed = orig_seed;
 
 % -- Majority vote -----------------------------------------------------------
 final_labels     = nan(1, n_units);
@@ -73,7 +66,6 @@ for u = 1:n_units
         final_labels(u)     = mode_label;
         final_confidence(u) = agreement;
     end
-    % Units below MinAgreement remain NaN with confidence = max agreement seen
     if isnan(final_labels(u))
         final_confidence(u) = freq / N;
     end
