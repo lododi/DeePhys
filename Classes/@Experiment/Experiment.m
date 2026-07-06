@@ -5,13 +5,30 @@ classdef Experiment < handle
 % Experiment provides a convenient API that assembles the right matrices from
 % the FeatureStore and stores results.
 %
+% Also serves as a filterable container for metadata-based subsetting,
+% replacing the old RecordingGroup's inclusion/exclusion workflow.
+%
 % USAGE:
 %   % From new pipeline
 %   procs = RecordingProcessor.loadMany(paths);
 %   exp = Experiment.fromProcessors(procs);
 %
+%   % From saved FeatureStore (lightweight — no spike data in memory)
+%   fs  = FeatureStore.load('experiment.mat');
+%   exp = Experiment.fromFeatureStore(fs);
+%
 %   % From legacy objects
 %   exp = Experiment.fromLegacyGroup(rg);
+%
+%   % Filtering — returns a new Experiment with a subset of the data
+%   exp2 = exp.filter('Mutation', {'WT','HET'});         % keep only WT and HET
+%   exp3 = exp.filter('DIV', [14, 21, 28]);              % keep specific DIVs
+%   exp4 = exp.exclude('Mutation', 'KO');                 % exclude KO
+%   exp5 = exp.filter('DIV', [14 21]).filter('Mutation', 'WT');  % chain filters
+%
+%   % Inspect available metadata values
+%   exp.listMetadata()
+%   vals = exp.uniqueValues('Mutation')
 %
 %   % Analysis (results stored in exp.Results)
 %   exp.classify('Unit',      'Mutation',     struct('Algorithm','rf'));
@@ -68,6 +85,29 @@ classdef Experiment < handle
                                  'DimReduction',   struct());
         end
 
+        function exp = fromFeatureStore(fs, parameters)
+        % FROMFEATURESTORE  Build Experiment from a saved FeatureStore (lightweight).
+        %
+        %   exp = Experiment.fromFeatureStore(fs)
+        %   exp = Experiment.fromFeatureStore(FeatureStore.load('path.mat'))
+        %
+        %   No RecordingProcessor objects are loaded — only the tables.
+        %   Analysis and filtering work normally; spike-time operations are unavailable.
+            arguments
+                fs          FeatureStore
+                parameters  struct = struct()
+            end
+            exp = Experiment();
+            exp.Processors   = RecordingProcessor.empty();
+            exp.Parameters   = parseStructParameters(Experiment.returnDefaultParams(), parameters);
+            exp.FeatureStore = fs;
+            exp.Results = struct('Classification', struct(), ...
+                                 'Regression',     struct(), ...
+                                 'DimReduction',   struct());
+            fprintf('Experiment: %d recordings, %d units\n', ...
+                height(fs.MetadataTable), height(fs.UnitTable));
+        end
+
         function exp = fromPaths(processor_paths, parameters)
         % FROMPATHS  Load processors from file paths and build Experiment.
             arguments
@@ -76,6 +116,110 @@ classdef Experiment < handle
             end
             procs = RecordingProcessor.loadMany(processor_paths);
             exp = Experiment.fromProcessors(procs, parameters);
+        end
+
+    end
+
+    % =====================================================================
+    % Filtering and subsetting
+    % =====================================================================
+    methods
+
+        function exp2 = filter(exp, field_name, values)
+        % FILTER  Return a new Experiment keeping only recordings matching values.
+        %
+        %   exp2 = exp.filter('Mutation', {'WT','HET'})
+        %   exp2 = exp.filter('DIV', [14, 21, 28])
+        %
+        %   Filters can be chained: exp.filter('DIV',14).filter('Mutation','WT')
+            arguments
+                exp        Experiment
+                field_name (1,1) string
+                values
+            end
+            fs2 = exp.FeatureStore.subsetByMetadata(field_name, values);
+            exp2 = Experiment();
+            exp2.FeatureStore = fs2;
+            exp2.Parameters   = exp.Parameters;
+            exp2.Results      = struct('Classification', struct(), ...
+                                       'Regression',     struct(), ...
+                                       'DimReduction',   struct());
+            if ~isempty(exp.Processors)
+                kept_ids = string(fs2.MetadataTable.RecordingID);
+                mask = arrayfun(@(p) ~isempty(p.SpikeData) && ...
+                    ismember(string(p.SpikeData.RecordingID), kept_ids), exp.Processors);
+                exp2.Processors = exp.Processors(mask);
+            else
+                exp2.Processors = RecordingProcessor.empty();
+            end
+        end
+
+        function exp2 = exclude(exp, field_name, values)
+        % EXCLUDE  Return a new Experiment removing recordings matching values.
+        %
+        %   exp2 = exp.exclude('Mutation', 'KO')
+        %   exp2 = exp.exclude('DIV', [7])
+            arguments
+                exp        Experiment
+                field_name (1,1) string
+                values
+            end
+            col = exp.FeatureStore.MetadataTable.(field_name);
+            if ischar(values) || isstring(values) || iscell(values)
+                keep_mask = ~ismember(string(col), string(values));
+            else
+                keep_mask = ~ismember(col, values);
+            end
+            keep_ids = exp.FeatureStore.MetadataTable.RecordingID(keep_mask);
+            fs2 = exp.FeatureStore.subset(keep_ids);
+            exp2 = Experiment();
+            exp2.FeatureStore = fs2;
+            exp2.Parameters   = exp.Parameters;
+            exp2.Results      = struct('Classification', struct(), ...
+                                       'Regression',     struct(), ...
+                                       'DimReduction',   struct());
+            if ~isempty(exp.Processors)
+                kept_ids = string(fs2.MetadataTable.RecordingID);
+                mask = arrayfun(@(p) ~isempty(p.SpikeData) && ...
+                    ismember(string(p.SpikeData.RecordingID), kept_ids), exp.Processors);
+                exp2.Processors = exp.Processors(mask);
+            else
+                exp2.Processors = RecordingProcessor.empty();
+            end
+        end
+
+        function vals = uniqueValues(exp, field_name)
+        % UNIQUEVALUES  Return unique values of a metadata field.
+        %
+        %   vals = exp.uniqueValues('Mutation')   % → ["HET", "KO", "WT"]
+            arguments
+                exp        Experiment
+                field_name (1,1) string
+            end
+            col = exp.FeatureStore.MetadataTable.(field_name);
+            vals = unique(string(col));
+        end
+
+        function listMetadata(exp)
+        % LISTMETADATA  Print metadata fields and their unique values.
+            meta = exp.FeatureStore.MetadataTable;
+            cols = string(meta.Properties.VariableNames);
+            cols = cols(cols ~= "RecordingID");
+            fprintf('\nExperiment: %d recordings, %d units\n', ...
+                height(meta), height(exp.FeatureStore.UnitTable));
+            fprintf('%-20s  %s\n', 'Field', 'Unique values');
+            fprintf('%s\n', repmat('-', 1, 60));
+            for i = 1:numel(cols)
+                col = meta.(cols(i));
+                uvals = unique(string(col));
+                if numel(uvals) > 8
+                    val_str = strjoin(uvals(1:6), ', ') + " ... +" + (numel(uvals)-6) + " more";
+                else
+                    val_str = strjoin(uvals, ', ');
+                end
+                fprintf('%-20s  %s\n', cols(i), val_str);
+            end
+            fprintf('\n');
         end
 
     end

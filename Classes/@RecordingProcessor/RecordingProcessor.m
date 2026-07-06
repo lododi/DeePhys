@@ -1056,6 +1056,62 @@ classdef RecordingProcessor < handle
             params.Save.Overwrite = false;
         end
 
+        function [units, status] = loadUnits(file_path)
+        % LOADUNITS  Load only Units and Status from a saved RecordingProcessor.
+        %
+        %   [units, status] = RecordingProcessor.loadUnits(path)
+        %
+        %   Uses matfile for selective loading — avoids reading the heavy
+        %   SpikeData and Connectivity fields into memory.
+            arguments
+                file_path (1,1) string
+            end
+            mf = matfile(file_path, 'Writable', false);
+            if isprop(mf, 'UnitsStructArray')
+                us = mf.UnitsStructArray;
+                if ~isempty(us)
+                    units = arrayfun(@UnitData.fromStruct, us);
+                else
+                    units = UnitData.empty;
+                end
+            else
+                units = UnitData.empty;
+            end
+            if isprop(mf, 'Status')
+                status = mf.Status;
+            else
+                status = RecordingProcessor.emptyStatus();
+            end
+        end
+
+        function [uft, nft, status] = loadFeatureTables(file_path)
+        % LOADFEATURETABLES  Load only feature tables from a saved RecordingProcessor.
+        %
+        %   [uft, nft, status] = RecordingProcessor.loadFeatureTables(path)
+        %
+        %   Returns UnitFeatureTable, NetworkFeatureTable, and Status without
+        %   loading SpikeData, Units, or Connectivity into memory.
+            arguments
+                file_path (1,1) string
+            end
+            mf = matfile(file_path, 'Writable', false);
+            if isprop(mf, 'UnitFeatureTable')
+                uft = mf.UnitFeatureTable;
+            else
+                uft = table();
+            end
+            if isprop(mf, 'NetworkFeatureTable')
+                nft = mf.NetworkFeatureTable;
+            else
+                nft = table();
+            end
+            if isprop(mf, 'Status')
+                status = mf.Status;
+            else
+                status = RecordingProcessor.emptyStatus();
+            end
+        end
+
         function applyLabelsFromClassifier(proc_array, ctc)
         % APPLYLABELSFROMCLASSIFIER  Copy UnitLabels from a CellTypeClassifier to processors.
         %   Maps labels by UnitID matching. Resets CellTypeFeatures status to "pending".

@@ -277,12 +277,31 @@ fprintf('MetadataTable : %d rows x %d cols\n', height(fs.MetadataTable),  width(
 % fs_large = buildFeatureStoreInChunks(proc_paths, out_dir, chunk_size);
 % fs_large.save(fullfile(out_dir, 'FeatureStore.mat'));
 
-%% 18  Inspect table structure
+%% 18  Partial loading (RAM-friendly)
+%
+% When you only need feature tables or unit metadata — not the heavy SpikeData
+% or connectivity matrices — use loadUnits or loadFeatureTables.
+% These use MATLAB's matfile for selective variable access without loading
+% the full RecordingProcessor into memory.
+
+proc_file = fullfile(save_dir, 'RecordingProcessor.mat');
+
+% Load only units and status
+[units, status] = RecordingProcessor.loadUnits(proc_file);
+fprintf('Loaded %d units (status: QC=%s, UnitFeatures=%s)\n', ...
+    numel(units), status.QC, status.UnitFeatures);
+
+% Load only feature tables
+[uft, nft, status] = RecordingProcessor.loadFeatureTables(proc_file);
+fprintf('UnitFeatureTable: %d rows x %d cols\n', height(uft), width(uft));
+fprintf('NetworkFeatureTable: %d rows x %d cols\n', height(nft), width(nft));
+
+%% 19  Inspect table structure
 
 disp(string(fs.UnitTable.Properties.VariableNames)');
 disp(fs.UnitTable(1:min(5, height(fs.UnitTable)), 1:8));
 
-%% 19  Save and load FeatureStore
+%% 20  Save and load FeatureStore
 
 save_dir = '/net/bs-filesvr02/export/group/hierlemann/intermediate_data/Maxtwo/phornauer/Chemogenetics/';
 
@@ -292,3 +311,41 @@ fs.save(fs_file);
 fs2 = FeatureStore.load(fs_file);
 fprintf('Loaded FeatureStore: %d units, %d recordings.\n', ...
     height(fs2.UnitTable), height(fs2.RecordingTable));
+
+%% 21  Experiment — filterable analysis container
+%
+% Experiment wraps a FeatureStore with convenient metadata-based filtering
+% and analysis methods (classify, regress, reduce). It replaces the old
+% RecordingGroup for subsetting and grouping workflows.
+
+% From loaded processors (full pipeline)
+exp = Experiment.fromProcessors(procs);
+
+% Or from a saved FeatureStore (lightweight — no spike data in memory)
+exp = Experiment.fromFeatureStore(fs);
+
+% Inspect metadata fields and unique values
+exp.listMetadata();
+
+%% 22  Filtering and subsetting
+%
+% filter() and exclude() return a new Experiment with a subset of the data.
+% Filters can be chained.
+
+exp_wt  = exp.filter('Mutation', 'WT');
+exp_het = exp.filter('Mutation', {'WT','HET'});
+exp_d14 = exp.filter('DIV', [14, 21, 28]);
+
+% Exclude specific values
+exp_no_ko = exp.exclude('Mutation', 'KO');
+
+% Chain filters
+exp_wt_d14 = exp.filter('Mutation', 'WT').filter('DIV', 14);
+
+% Check what's left
+fprintf('After filtering: %d recordings, %d units\n', ...
+    height(exp_wt_d14.FeatureStore.MetadataTable), ...
+    height(exp_wt_d14.FeatureStore.UnitTable));
+
+% Unique values of a field
+disp(exp.uniqueValues('Mutation'));

@@ -86,7 +86,15 @@ fprintf('UnitTable     : %d rows × %d cols\n', height(fs.UnitTable),      width
 fprintf('RecordingTable: %d rows × %d cols\n', height(fs.RecordingTable), width(fs.RecordingTable));
 fprintf('MetadataTable : %d rows × %d cols\n', height(fs.MetadataTable),  width(fs.MetadataTable));
 
-%% 16  Inspect table structure
+%% 16  Partial loading (RAM-friendly)
+%
+% Load only feature tables without heavy SpikeData/Connectivity:
+
+[uft, nft, status] = RecordingProcessor.loadFeatureTables( ...
+    fullfile(string(load_paths{1}), 'RecordingProcessor.mat'));
+fprintf('Loaded feature tables: %d unit rows, %d network cols\n', height(uft), width(nft));
+
+%% 17  Inspect table structure
 
 % Column names in UnitTable
 disp(string(fs.UnitTable.Properties.VariableNames)');
@@ -94,7 +102,7 @@ disp(string(fs.UnitTable.Properties.VariableNames)');
 % First few rows
 disp(fs.UnitTable(1:min(5, height(fs.UnitTable)), 1:8));
 
-%% 17  Save and load FeatureStore
+%% 18  Save and load FeatureStore
 
 fs_file = fullfile(save_dir, 'FeatureStore.mat');
 fs.save(fs_file);
@@ -102,3 +110,14 @@ fs.save(fs_file);
 fs2 = FeatureStore.load(fs_file);
 fprintf('Loaded FeatureStore: %d units, %d recordings.\n', ...
     height(fs2.UnitTable), height(fs2.RecordingTable));
+
+%% 19  Experiment — filterable analysis container
+
+exp = Experiment.fromFeatureStore(fs);
+exp.listMetadata();
+
+% Filter by metadata
+exp_subset = exp.filter('Mutation', 'WT').filter('DIV', [14, 21, 28]);
+fprintf('Filtered: %d recordings, %d units\n', ...
+    height(exp_subset.FeatureStore.MetadataTable), ...
+    height(exp_subset.FeatureStore.UnitTable));
