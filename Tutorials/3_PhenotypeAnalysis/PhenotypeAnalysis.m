@@ -90,6 +90,13 @@ exp = Experiment.fromProcessors(procs);
 % gives the most data but also the most within-recording correlation —
 % hence the recording-grouped CV so that correlation can't leak into the
 % accuracy estimate.
+%
+% Unit-level X can be orders of magnitude larger than Recording/Culture
+% level (thousands of units vs. tens/hundreds of recordings/cultures) —
+% if this runs out of memory, the RF's OOB permuted predictor importance
+% is usually the culprit (it re-predicts every OOB sample once per
+% feature, per tree, per fold). Set ComputeImportance = false and/or
+% lower NumTrees first, before trimming FeatureGroups.
 
 opts = struct();
 
@@ -97,6 +104,12 @@ opts.Algorithm     = 'rf';      % 'rf' (random forest) or 'svm'
 opts.KFold         = 5;
 opts.FeatureGroups = 'all';     % or ["ActivityFeatures","WaveformFeatures"]
 opts.CVLevel       = 'recording';  % group CV at recording level
+
+% Memory knobs for large unit-level runs (uncomment if classify() runs
+% out of memory — see Classifier.classify for details):
+% opts.ComputeImportance = false;  % skip OOB permutation importance (biggest win)
+% opts.NumTrees          = 100;    % fewer trees than the default 500
+% opts.Surrogate         = 'off';  % only needed if X has missing values
 
 result_unit = exp.classify('Unit', 'Concentration', opts);
 

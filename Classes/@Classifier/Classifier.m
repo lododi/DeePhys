@@ -37,6 +37,16 @@ classdef Classifier
         %     .PoolingValues     - cell array to merge label values
         %     .GroupLabels       - (optional) string array of class label names
         %     .Prior             - 'empirical' (default) or 'uniform' (equal class weight)
+        %     .NumTrees          - RF trees per fold (default 500, see MLPipeline.RF.NumCycles).
+        %                          Lower this for large N (e.g. unit-level classification with
+        %                          many thousands of rows) to reduce memory/time.
+        %     .Surrogate         - 'on' (default) or 'off'. Surrogate splits let RF handle missing
+        %                          data but roughly double tree memory/build time for wide feature
+        %                          tables — set 'off' if X has no missing values.
+        %     .ComputeImportance - true (default) or false. OOB permuted predictor importance is
+        %                          the single most expensive RF step (re-predicts OOB samples once
+        %                          per feature, per tree) — set false to skip it when it's not needed
+        %                          or when it's the cause of an out-of-memory failure.
         %
         % OUTPUTS:
         %   result - (1 x K) ClassificationResult array, one per fold
@@ -100,10 +110,12 @@ classdef Classifier
 
                 clf_params = MLPipeline.returnDefaultParams();
                 clf_params.RF.Prior = opts.Prior;
+                if ~isempty(opts.NumTrees),  clf_params.RF.NumCycles = opts.NumTrees;  end
+                if ~isempty(opts.Surrogate), clf_params.RF.Surrogate = opts.Surrogate; end
                 [clf, train_acc] = MLPipeline.createClassifier(X_train, Y_train, opts.Algorithm, opts.NHyper, clf_params);
                 [Y_pred, scores] = predict(clf, X_test);
 
-                if opts.Algorithm == "rf"
+                if opts.Algorithm == "rf" && opts.ComputeImportance
                     predImp = oobPermutedPredictorImportance(clf, 'Options', statset('UseParallel', true));
                 else
                     predImp = [];
@@ -259,6 +271,9 @@ classdef Classifier
             if ~isfield(opts, 'PoolingValues'),      opts.PoolingValues = {};     end
             if ~isfield(opts, 'Prior'),              opts.Prior = 'empirical';    end
             if ~isfield(opts, 'Seed'),               opts.Seed = [];              end
+            if ~isfield(opts, 'NumTrees'),           opts.NumTrees = [];          end
+            if ~isfield(opts, 'Surrogate'),          opts.Surrogate = [];         end
+            if ~isfield(opts, 'ComputeImportance'),  opts.ComputeImportance = true; end
         end
 
         function checkClassBalance(Y)

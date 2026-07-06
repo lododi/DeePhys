@@ -243,6 +243,11 @@ classdef Experiment < handle
         %   .NormalizationVar            — metadata field name for per-group normalization
         %   .GroupingVar, .GroupingValues — for Culture-level aggregation
         %   .Normalization               — "baseline" or "scaled" for culture aggregation
+        %   .NumTrees, .Surrogate, .ComputeImportance — RF memory/time knobs, see
+        %       Classifier.classify. Unit-level classification can have orders of
+        %       magnitude more rows than Recording/Culture level; if it runs out of
+        %       memory, try opts.ComputeImportance = false and/or opts.NumTrees = 100
+        %       and/or opts.Surrogate = 'off' before reducing FeatureGroups.
             arguments
                 exp                 Experiment
                 level               (1,1) string = "Recording"
@@ -500,6 +505,9 @@ classdef Experiment < handle
             if ~isfield(opts, 'NHyper'),           opts.NHyper = 0;                    end
             if ~isfield(opts, 'Prior'),            opts.Prior = 'empirical';           end
             if ~isfield(opts, 'Seed'),             opts.Seed = [];                     end
+            if ~isfield(opts, 'NumTrees'),         opts.NumTrees = [];                 end
+            if ~isfield(opts, 'Surrogate'),        opts.Surrogate = [];                end
+            if ~isfield(opts, 'ComputeImportance'), opts.ComputeImportance = true;      end
         end
 
     end

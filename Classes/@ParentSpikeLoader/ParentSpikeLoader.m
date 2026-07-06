@@ -67,30 +67,40 @@ classdef ParentSpikeLoader
             [unit_ids_local, group_tids] = findgroups(spike_units);
 
             n_bins = round(2 * acg_params.Lag / acg_params.BinSize) + 1;
-            fprintf('ParentSpikeLoader: computing CCG for %d templates in %s ...\n', ...
+            fprintf('ParentSpikeLoader: computing ACG for %d templates in %s ...\n', ...
                 numel(group_tids), parent_path);
 
-            [ccg_3d, ~] = CCG(spike_times, unit_ids_local, ...
-                'binSize', acg_params.BinSize, ...
-                'duration', 2 * acg_params.Lag, ...
-                'Fs', 1 / sampling_rate);
-
-            % Build map: TemplateID string → (n_bins×1) ACG vector
+            % Compute each template's autocorrelogram individually (its own
+            % spike train against itself) rather than one all-pairs CCG call.
+            % A single call requesting all templates at once returns a full
+            % nBins x nGroups x nGroups cross-correlogram tensor -- only the
+            % diagonal (autocorrelograms) is ever used below, but the tensor
+            % itself scales as O(nGroups^2) and can demand tens of GB for a
+            % parent recording with hundreds-to-thousands of templates,
+            % crashing MATLAB outright. Per-template calls are O(nGroups).
             acg_map = containers.Map('KeyType', 'char', 'ValueType', 'any');
             for t = 1:numel(group_tids)
-                raw_acg = double(ccg_3d(:, t, t));
+                unit_times = spike_times(unit_ids_local == t);
+                if numel(unit_times) <= 1
+                    raw_acg = zeros(n_bins, 1);
+                else
+                    ccg_t = CCG(unit_times, ones(size(unit_times)), ...
+                        'binSize', acg_params.BinSize, ...
+                        'duration', 2 * acg_params.Lag, ...
+                        'Fs', 1 / sampling_rate);
+                    raw_acg = double(ccg_t(:, 1, 1));
+                    if numel(raw_acg) ~= n_bins
+                        warning('ParentSpikeLoader:binMismatch', ...
+                            'Template %d: expected %d bins, got %d — ACG zeroed.', ...
+                            group_tids(t), n_bins, numel(raw_acg));
+                        raw_acg = zeros(n_bins, 1);
+                    end
+                end
                 mx = max(raw_acg);
                 if mx > 0
                     raw_acg = raw_acg / mx;
                 end
                 acg_map(num2str(group_tids(t))) = raw_acg;
-            end
-
-            % Guard: if CCG produced wrong bin count, fill with zeros
-            if n_bins ~= size(ccg_3d, 1)
-                warning('ParentSpikeLoader:binMismatch', ...
-                    'Expected %d bins, got %d — ACGs zeroed.', n_bins, size(ccg_3d,1));
-                acg_map = containers.Map('KeyType', 'char', 'ValueType', 'any');
             end
 
             cache(key) = acg_map;  %#ok<NASGU>

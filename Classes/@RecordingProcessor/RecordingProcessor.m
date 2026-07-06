@@ -746,6 +746,15 @@ classdef RecordingProcessor < handle
         %   parent-path detection — avoids re-running the full pipeline just to
         %   pick up the corrected value. Does not touch the file on disk;
         %   call proc.save(file_path) afterwards to persist the change.
+        %
+        %   If ParentPath changes, Status.ParentFeatures is reset to "pending":
+        %   a processor run before this fix likely found no valid parent path at
+        %   the time and marked ParentFeatures "done" without adding Parent_ACG*
+        %   columns (see computeParentFeatures). That "done" status would
+        %   otherwise make a later computeParentFeatures() call silently no-op
+        %   even with the corrected path. Call proc.computeParentFeatures() (and
+        %   proc.save(file_path)) after backfilling to actually populate the
+        %   Parent_ACG* columns.
             new_parent = SpikeData.resolveParentPath(proc.SpikeData.InputPath, proc.SpikeData.Metadata);
             % Old saves may store ParentPath as a 0x0 string.empty rather than a
             % 1x1 "" — compare via char/strcmp so size mismatches don't silently
@@ -753,6 +762,7 @@ classdef RecordingProcessor < handle
             changed = ~strcmp(char(new_parent), char(proc.SpikeData.ParentPath));
             if changed
                 proc.SpikeData.ParentPath = new_parent;
+                proc.Status.ParentFeatures = "pending";
             end
         end
 

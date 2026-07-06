@@ -48,7 +48,7 @@
 % path pattern, then build the .mat paths from the discovered directories.
 
 root_path  = "/net/bs-filesvr02/export/group/hierlemann/intermediate_data/Maxtwo/phornauer";
-path_logic = {'C*', '*', 'w*', 'sorter_output', 'segment_*', 'test*'};
+path_logic = {'C*', '*', 'w*', 'sorter_output', 'segment_*', 'test*','*'};
 
 sorting_paths = generate_sorting_path_list(root_path, path_logic);
 fprintf('Discovered %d sorting paths\n', numel(sorting_paths));
@@ -56,15 +56,42 @@ fprintf('Discovered %d sorting paths\n', numel(sorting_paths));
 proc_paths = fullfile(string(sorting_paths), 'RecordingProcessor.mat');
 proc_paths = proc_paths(isfile(proc_paths));
 
-fs_file = '/path/to/FeatureStore.mat';
+
+save_dir = '/net/bs-filesvr02/export/group/hierlemann/intermediate_data/Maxtwo/phornauer/Chemogenetics/';
+fs_file = fullfile(save_dir, 'FeatureStore.mat');
+
 fs = FeatureStore.load(fs_file);
 
-% Build UnitData array in parallel from saved processors
-N = numel(proc_paths);
-ud_cell = cell(1, N);
-parfor i = 1:N
-    p = RecordingProcessor.load(proc_paths{i});
-    ud_cell{i} = p.Units;
+%%
+sorting_paths = string(sorting_paths);  % ensure string array, 1x595
+n = numel(sorting_paths);
+
+well_id    = nan(1, n);
+segment_id = nan(1, n);
+
+for s = 1:n
+    p = sorting_paths(s);
+
+    well_tok = regexp(p, 'well(\d+)', 'tokens', 'once');
+    seg_tok  = regexp(p, 'segment_(\d+)', 'tokens', 'once');
+
+    if ~isempty(well_tok)
+        well_id(s) = str2double(well_tok{1});
+    end
+    if ~isempty(seg_tok)
+        segment_id(s) = str2double(seg_tok{1});
+    end
+end
+
+keep_idx = find(well_id > 11 & segment_id < 6);
+
+%%
+good_proc_paths = sorting_paths(keep_idx);
+procs = RecordingProcessor.loadMany(fullfile(good_proc_paths,'RecordingProcessor.mat'));
+
+%%
+parfor i = 1:length(procs)
+    ud_cell{i} = procs(i).Units;
 end
 ud = [ud_cell{:}];
 clear ud_cell
@@ -78,7 +105,7 @@ clear ud_cell
 params = struct();
 
 % ── Harmonization ────────────────────────────────────────────────────────
-params.Harmonization.ACGBinSize = 0.0005;
+params.Harmonization.ACGBinSize = 0.0001;
 params.Harmonization.ACGLag     = 0.1;
 params.Harmonization.ACGSource  = 'FullACG';
 
@@ -88,18 +115,21 @@ params.Harmonization.ACGSource  = 'FullACG';
 %   'two_window': bootstrap permutation test comparing pre vs post FR.
 %   'full_curve': per-unit Spearman rank correlation across dose levels.
 %     Falls back to 'two_window' if fewer than MinRecordings are available.
-params.Bootstrap.GroundTruthMethod = 'two_window';
-params.Bootstrap.Alpha          = 1e-10;
+params.Bootstrap.GroundTruthMethod = 'full_curve';
+params.Bootstrap.Alpha          = 0.0001;
 params.Bootstrap.NIter          = 1000;
 params.Bootstrap.Direction      = 'increase';
+params.Bootstrap.PreCutout  = [0, 1200];
+params.Bootstrap.PostCutout = [6000, 7200];
+params.Bootstrap.BinSize    = 20;
 
 % ── Normalization and recording selection ────────────────────────────────
-params.UMAP.NormalizationVar = 'ChipID';
+params.UMAP.NormalizationVar = 'RecordingID';
 params.UMAP.GroupingVar    = 'Concentration';
-params.UMAP.GroupingValues = 0;
+%params.UMAP.GroupingValues = 0;
 
 % ── Unsupervised UMAP geometry ──────────────────────────────────────────
-params.UMAP.NDims           = 5;
+params.UMAP.NDims           = 2;
 params.UMAP.AutoNNeighbors  = true;
 params.UMAP.MinNNeighbors   = 15;
 params.UMAP.MinDist         = 0.1;
@@ -110,10 +140,10 @@ params.UMAP.WaveformWeight  = 1.0;
 % ── Louvain community detection ─────────────────────────────────────────
 params.Community.LouvainResolution            = 1.0;
 params.Community.InhibitoryCommunityRelThresh = 0.3;
-params.Community.EnrichmentFactor             = 3;
+params.Community.EnrichmentFactor             = 1;
 params.Community.PuritySigmaThreshold         = 2.5;
-params.Community.CommunityFallbackThreshold   = 0.5;
-params.Community.LouvainRestarts              = 5;
+params.Community.CommunityFallbackThreshold   = 0.2;
+params.Community.LouvainRestarts              = 1;
 
 % ── Classification method ───────────────────────────────────────────────
 %   "graph" (default): label propagation on the UMAP NxN graph.
@@ -131,14 +161,24 @@ params.Ensemble.MinAgreement = 0.6;
 
 % ── Counterexample selection ─────────────────────────────────────────────
 params.OutlierDetection.CounterexampleRatio = 1;
+params.OutlierDetection.CounterexampleDistancePercentile  = 95;
+params.OutlierDetection.AutoGMMSeparation     = 1.5;
+params.OutlierDetection.ContaminationFraction = 0.1;
 
 % ── Reproducibility ─────────────────────────────────────────────────────
 params.RNGSeed = 42;
 
+% Optional: data-driven adaptive params (all off by default)
+params.UMAP.AutoNNeighbors              = true;   % n_neighbors = max(15, sqrt(N))
+params.UMAP.AutoConfidenceK             = true;   % kNN k = max(5, sqrt(N_train))
+params.UMAP.FeatureSelection            = true;   % remove low-var / correlated features
+params.Bootstrap.UseFDR                 = false;   % BH correction instead of fixed alpha
+
 % ── Diagnostics ─────────────────────────────────────────────────────────
-% params.Diagnostics.Enable      = true;
+params.Diagnostics.Enable      = true;
 % params.Diagnostics.SaveDir     = '/path/to/output';
-% params.Diagnostics.ShowFigures = true;
+params.Diagnostics.ShowFigures = true;
+params.CultureKeys = ["ChipID", "PlatingDate", "RecordingDate"];
 
 % Construct classifier
 ctc = CellTypeClassifier(fs, ud, params);
