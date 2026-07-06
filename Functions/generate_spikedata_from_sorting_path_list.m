@@ -87,9 +87,14 @@ function allSD = generate_spikedata_from_sorting_path_list(PATH_LIST, SHEET_PATH
         metadata.CellLine      = char(T.CellLine(rowIdx));
         metadata.Patterning    = char(T.Patterning(rowIdx));
 
-        % Detect segment paths and set parent path
+        % Detect segment paths and set parent path.
+        % Priority: sibling qc_output folder (preferred) > parent dir itself.
         [parent_dir, leaf] = fileparts(ks_path);
-        if startsWith(leaf, 'segment_') && isfile(fullfile(parent_dir, 'spike_times.npy'))
+        qc_candidate = fullfile(parent_dir, 'qc_output');
+        if startsWith(leaf, 'segment_') && isfolder(qc_candidate) && ...
+                isfile(fullfile(qc_candidate, 'spike_times.npy'))
+            metadata.ParentInputPath = qc_candidate;
+        elseif startsWith(leaf, 'segment_') && isfile(fullfile(parent_dir, 'spike_times.npy'))
             metadata.ParentInputPath = parent_dir;
         end
 
