@@ -40,9 +40,9 @@ function allSD = generate_spikedata_from_sorting_path_list(PATH_LIST, SHEET_PATH
     for i = 1:numel(PATH_LIST)
         ks_path = PATH_LIST{i};
 
-        % Parse: .../<recDate>/<plate>/Network/well###/sorter_output/qc_output
+        % Parse: .../<recDate>/<plate>/Network/well###/sorter_output[/qc_output|/segment_N]
         tok = regexp(ks_path, ...
-            '/(\d{6})/([^/]+)/Network/well(\d{3})/sorter_output/qc_output/?$', ...
+            '/(\d{6})/([^/]+)/Network/well(\d{3})/sorter_output(?:/(?:qc_output|segment_\d+))?/?$', ...
             'tokens', 'once');
 
         if isempty(tok)
@@ -86,6 +86,12 @@ function allSD = generate_spikedata_from_sorting_path_list(PATH_LIST, SHEET_PATH
         metadata.EI_Ratio      = char(T.E_IRatio(rowIdx));
         metadata.CellLine      = char(T.CellLine(rowIdx));
         metadata.Patterning    = char(T.Patterning(rowIdx));
+
+        % Detect segment paths and set parent path
+        [parent_dir, leaf] = fileparts(ks_path);
+        if startsWith(leaf, 'segment_') && isfile(fullfile(parent_dir, 'spike_times.npy'))
+            metadata.ParentInputPath = parent_dir;
+        end
 
         allSD{end+1} = SpikeData.fromKilosort(ks_path, metadata);
         nOk = nOk + 1;

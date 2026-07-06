@@ -40,15 +40,24 @@ classdef SpikeData
             sd.InputPath = input_path;
 
             % Resolve parent path (concatenated recording that this segment was split from).
-            % Priority: explicit metadata.ParentInputPath > auto-derived sibling qc_output > ""
+            % Priority: explicit metadata.ParentInputPath
+            %         > parent dir is a segment parent (has spike_times.npy and we're in segment_*)
+            %         > sibling qc_output folder
+            %         > ""
             if isfield(metadata, 'ParentInputPath') && ~isempty(metadata.ParentInputPath)
                 sd.ParentPath = string(metadata.ParentInputPath);
             else
-                candidate = fullfile(fileparts(char(input_path)), 'qc_output');
-                if isfolder(candidate) && isfile(fullfile(candidate, 'spike_times.npy'))
-                    sd.ParentPath = string(candidate);
+                parent_dir = fileparts(char(input_path));
+                [~, leaf] = fileparts(char(input_path));
+                if startsWith(leaf, 'segment_') && isfile(fullfile(parent_dir, 'spike_times.npy'))
+                    sd.ParentPath = string(parent_dir);
                 else
-                    sd.ParentPath = "";
+                    candidate = fullfile(parent_dir, 'qc_output');
+                    if isfolder(candidate) && isfile(fullfile(candidate, 'spike_times.npy'))
+                        sd.ParentPath = string(candidate);
+                    else
+                        sd.ParentPath = "";
+                    end
                 end
             end
 
