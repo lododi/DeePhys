@@ -23,6 +23,38 @@ classdef SpikeData
 
     methods (Static)
 
+        function parent_path = resolveParentPath(input_path, metadata)
+        % RESOLVEPARENTPATH  Resolve the parent (concatenated) Kilosort directory.
+        %
+        %   parent_path = SpikeData.resolveParentPath(input_path, metadata)
+        %
+        %   Priority: explicit metadata.ParentInputPath
+        %           > sibling qc_output folder (preferred — holds the concatenated sort)
+        %           > parent dir itself has spike_times.npy (segment_* directly under it)
+        %           > ""
+            arguments
+                input_path  (1,1) string
+                metadata    (1,1) struct = struct()
+            end
+            if isfield(metadata, 'ParentInputPath') && ~isempty(metadata.ParentInputPath)
+                parent_path = string(metadata.ParentInputPath);
+                return
+            end
+            parent_dir = fileparts(char(input_path));
+            [~, leaf] = fileparts(char(input_path));
+            qc_candidate = fullfile(parent_dir, 'qc_output');
+            if startsWith(leaf, 'segment_') && isfolder(qc_candidate) && ...
+                    isfile(fullfile(qc_candidate, 'spike_times.npy'))
+                parent_path = string(qc_candidate);
+            elseif startsWith(leaf, 'segment_') && isfile(fullfile(parent_dir, 'spike_times.npy'))
+                parent_path = string(parent_dir);
+            elseif isfolder(qc_candidate) && isfile(fullfile(qc_candidate, 'spike_times.npy'))
+                parent_path = string(qc_candidate);
+            else
+                parent_path = "";
+            end
+        end
+
         function sd = fromKilosort(input_path, metadata)
         % FROMKILOSORT  Load spike data from a Kilosort output directory.
         %
@@ -38,29 +70,7 @@ classdef SpikeData
 
             sd = SpikeData();
             sd.InputPath = input_path;
-
-            % Resolve parent path (concatenated recording that this segment was split from).
-            % Priority: explicit metadata.ParentInputPath
-            %         > sibling qc_output folder (preferred — holds the concatenated sort)
-            %         > parent dir itself has spike_times.npy (segment_* directly under it)
-            %         > ""
-            if isfield(metadata, 'ParentInputPath') && ~isempty(metadata.ParentInputPath)
-                sd.ParentPath = string(metadata.ParentInputPath);
-            else
-                parent_dir = fileparts(char(input_path));
-                [~, leaf] = fileparts(char(input_path));
-                qc_candidate = fullfile(parent_dir, 'qc_output');
-                if startsWith(leaf, 'segment_') && isfolder(qc_candidate) && ...
-                        isfile(fullfile(qc_candidate, 'spike_times.npy'))
-                    sd.ParentPath = string(qc_candidate);
-                elseif startsWith(leaf, 'segment_') && isfile(fullfile(parent_dir, 'spike_times.npy'))
-                    sd.ParentPath = string(parent_dir);
-                elseif isfolder(qc_candidate) && isfile(fullfile(qc_candidate, 'spike_times.npy'))
-                    sd.ParentPath = string(qc_candidate);
-                else
-                    sd.ParentPath = "";
-                end
-            end
+            sd.ParentPath = SpikeData.resolveParentPath(input_path, metadata);
 
             % Merge InputPath into metadata
             metadata.InputPath = char(input_path);

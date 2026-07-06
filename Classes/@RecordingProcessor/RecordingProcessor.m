@@ -736,6 +736,23 @@ classdef RecordingProcessor < handle
     % =====================================================================
     methods
 
+        function changed = backfillParentPath(proc)
+        % BACKFILLPARENTPATH  Recompute SpikeData.ParentPath on an already-loaded
+        %   processor, using the current parent-path detection rules.
+        %
+        %   changed = proc.backfillParentPath()
+        %
+        %   Useful for processors loaded from .mat files saved before a fix to
+        %   parent-path detection — avoids re-running the full pipeline just to
+        %   pick up the corrected value. Does not touch the file on disk;
+        %   call proc.save(file_path) afterwards to persist the change.
+            new_parent = SpikeData.resolveParentPath(proc.SpikeData.InputPath, proc.SpikeData.Metadata);
+            changed = new_parent ~= proc.SpikeData.ParentPath;
+            if changed
+                proc.SpikeData.ParentPath = new_parent;
+            end
+        end
+
         function save(proc, file_path)
         % SAVE  Write all data as plain MATLAB types (no handle objects).
         %   Load with RecordingProcessor.load(path).
