@@ -154,6 +154,75 @@ classdef FeatureStore < handle
             fs = FeatureStore.assembleFromCells(unit_tables, recording_rows, metadata_rows);
         end
 
+        function fs = fromProcessorsChunked(proc_paths, out_dir, chunk_size)
+            % FROMPROCESSORSCHUNKED  Assemble a FeatureStore from many saved
+            %   RecordingProcessor.mat files without holding more than
+            %   chunk_size processors in memory at once.
+            %
+            %   Loading everything via RecordingProcessor.loadMany + a single
+            %   fromProcessors call keeps every processor's full data (spike
+            %   times, waveforms, CCG matrices, spatial data, ...) resident in
+            %   RAM simultaneously — for hundreds of recordings this can exceed
+            %   available memory. This method instead processes proc_paths in
+            %   chunks, saving an intermediate FeatureStore per chunk to
+            %   out_dir (FeatureStore_chunk_NNN.mat, left on disk for
+            %   resuming/inspection) before combining their lightweight tables
+            %   into one FeatureStore.
+            %
+            %   fs = FeatureStore.fromProcessorsChunked(proc_paths, out_dir)
+            %   fs = FeatureStore.fromProcessorsChunked(proc_paths, out_dir, 20)
+            arguments
+                proc_paths string
+                out_dir    (1,1) string
+                chunk_size (1,1) double = 20
+            end
+
+            proc_paths = proc_paths(:);
+            n = numel(proc_paths);
+            n_chunks = ceil(n / chunk_size);
+            chunk_files = strings(n_chunks, 1);
+
+            fprintf('fromProcessorsChunked: %d recordings in %d chunks of up to %d.\n', ...
+                n, n_chunks, chunk_size);
+
+            for c = 1:n_chunks
+                idx0 = (c-1)*chunk_size + 1;
+                idx1 = min(c*chunk_size, n);
+                chunk_paths = proc_paths(idx0:idx1);
+
+                fprintf('[chunk %d/%d] loading %d recordings...\n', c, n_chunks, numel(chunk_paths));
+
+                procs_chunk = RecordingProcessor.loadMany(chunk_paths);
+                fs_chunk = FeatureStore.fromProcessors(procs_chunk);
+
+                chunk_file = fullfile(out_dir, sprintf('FeatureStore_chunk_%03d.mat', c));
+                fs_chunk.save(chunk_file);
+                chunk_files(c) = chunk_file;
+
+                fprintf('[chunk %d/%d] saved %s (%d units, %d recordings)\n', ...
+                    c, n_chunks, chunk_file, height(fs_chunk.UnitTable), height(fs_chunk.RecordingTable));
+
+                clear procs_chunk fs_chunk
+            end
+
+            fprintf('Combining %d chunk FeatureStores...\n', n_chunks);
+            unit_cells      = cell(n_chunks, 1);
+            recording_cells = cell(n_chunks, 1);
+            metadata_cells  = cell(n_chunks, 1);
+
+            for c = 1:n_chunks
+                fs_c = FeatureStore.load(chunk_files(c));
+                unit_cells{c}      = fs_c.UnitTable;
+                recording_cells{c} = fs_c.RecordingTable;
+                metadata_cells{c}  = fs_c.MetadataTable;
+                clear fs_c
+            end
+
+            fs = FeatureStore.assembleFromCells(unit_cells, recording_cells, metadata_cells);
+            fprintf('Combined FeatureStore: %d units, %d recordings.\n', ...
+                height(fs.UnitTable), height(fs.RecordingTable));
+        end
+
         function fs = load(file_path)
             % LOAD  Restore a FeatureStore saved with fs.save().
             arguments

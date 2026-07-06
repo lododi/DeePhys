@@ -216,7 +216,7 @@ disp(proc_loaded.Status);
 % level of the directory tree under root_path.
 
 root_path  = "/net/bs-filesvr02/export/group/hierlemann/intermediate_data/Maxtwo/phornauer";
-path_logic = {'C*', '*', 'w*', 'sorter_output', 'segment_*', 'test*'};
+path_logic = {'C*', '*', 'w*', 'sorter_output', 'segment_*', 'test*','*'};
 
 sorting_paths = generate_sorting_path_list(root_path, path_logic);
 fprintf('Discovered %d sorting paths\n', numel(sorting_paths));
@@ -248,34 +248,39 @@ fprintf('MetadataTable : %d rows x %d cols\n', height(fs.MetadataTable),  width(
 %
 % Use generate_sorting_path_list to discover legacy recordings by path pattern.
 
-% legacy_root  = "/net/bs-filesvr02/export/group/hierlemann/intermediate_data/Maxtwo/phornauer";
-% legacy_logic = {'C*', '*', 'w*', 'sorter_output', 'segment_*'};
-% legacy_dirs  = generate_sorting_path_list(legacy_root, legacy_logic);
-% fprintf('Found %d legacy directories\n', numel(legacy_dirs));
-%
-% legacy_mats    = fullfile(string(legacy_dirs), 'MEArecording.mat');
-% legacy_mats    = legacy_mats(isfile(legacy_mats));
-% converted_dir  = "/path/to/converted";
-%
-% converted_paths = RecordingProcessor.convertMany(legacy_mats, converted_dir);
-%
-% % Load all converted processors
-% good = converted_paths(converted_paths ~= "");
-% procs_converted = RecordingProcessor.loadMany(good);
-% fprintf('Converted and loaded %d processors.\n', numel(procs_converted));
+legacy_root  = "/net/bs-filesvr02/export/group/hierlemann/intermediate_data/Maxtwo/phornauer";
+legacy_logic = {'C*', '*', 'w*', 'sorter_output', 'segment_*'};
+legacy_dirs  = generate_sorting_path_list(legacy_root, legacy_logic);
+fprintf('Found %d legacy directories\n', numel(legacy_dirs));
+
+legacy_mats   = fullfile(string(legacy_dirs), 'MEArecording.mat');
+legacy_mats   = legacy_mats(isfile(legacy_mats));
+converted_dir = "/path/to/converted";
+
+converted_paths = RecordingProcessor.convertMany(legacy_mats, converted_dir);
+
+n_ok     = sum(converted_paths ~= "");
+n_failed = sum(converted_paths == "");
+fprintf('Conversion complete: %d succeeded, %d failed.\n', n_ok, n_failed);
+
+% Load all converted processors
+good = converted_paths(converted_paths ~= "");
+procs_converted = RecordingProcessor.loadMany(good);
+fprintf('Converted and loaded %d processors.\n', numel(procs_converted));
 
 %% 17  Chunked FeatureStore assembly for large datasets
 %
 % When the number of recordings is large (hundreds+), loading all processors
-% simultaneously may exceed available memory. buildFeatureStoreInChunks
+% simultaneously may exceed available memory. FeatureStore.fromProcessorsChunked
 % loads them in batches, builds a FeatureStore per chunk, saves to disk,
-% then combines the lightweight table-only results.
+% then combines the lightweight table-only results — same output as
+% FeatureStore.fromProcessors (§15), just with bounded peak memory.
 %
 % Adjust chunk_size based on available RAM (lower = less memory, slower).
 
-% chunk_size = 20;
-% fs_large = buildFeatureStoreInChunks(proc_paths, out_dir, chunk_size);
-% fs_large.save(fullfile(out_dir, 'FeatureStore.mat'));
+chunk_size = 20;
+fs_large = FeatureStore.fromProcessorsChunked(proc_paths, save_dir, chunk_size);
+fs_large.save(fullfile(save_dir, 'FeatureStore.mat'));
 
 %% 18  Partial loading (RAM-friendly)
 %
@@ -335,6 +340,7 @@ exp.listMetadata();
 exp_wt  = exp.filter('Mutation', 'WT');
 exp_het = exp.filter('Mutation', {'WT','HET'});
 exp_d14 = exp.filter('DIV', [14, 21, 28]);
+exp_conc = exp.filter('Concentration', [0,0.01,0.1,1,10,100,Inf]).filter('Region','Cortex');
 
 % Exclude specific values
 exp_no_ko = exp.exclude('Mutation', 'KO');
@@ -348,4 +354,4 @@ fprintf('After filtering: %d recordings, %d units\n', ...
     height(exp_wt_d14.FeatureStore.UnitTable));
 
 % Unique values of a field
-disp(exp.uniqueValues('Mutation'));
+disp(exp.uniqueValues('Concentration'));

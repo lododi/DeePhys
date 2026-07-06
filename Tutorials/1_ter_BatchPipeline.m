@@ -1,13 +1,28 @@
-%% Batch Processing Pipeline — Excel-driven metadata + auto path parsing
+%% Tutorial 1 ter — Excel-Driven Batch Pipeline
 %
-% Discovers all recordings under base_dir (including segments of
-% concatenated recordings), matches each to metadata in an Excel plate
-% map (keyed by ChipID_WellNum + RecordingDate), then runs the full
-% RecordingProcessor pipeline and assembles a FeatureStore.
+% A more explicit alternative to 1_bis_DataProcessing.m's bulk pipeline.
+% 1_bis relies on generate_spikedata_from_sorting_path_list to match each
+% discovered path against the Excel sheet internally. This tutorial
+% separates that into inspectable steps — useful when the automatic
+% matching in 1_bis isn't enough, e.g. when:
 %
-% Requires (same folder / on path):
-%   yymmddToISO.m, parsePathMetadata.m, findSorterOutputDirs.m,
-%   discoverRecordings.m, expandChipList.m, joinRecordingsWithMetadata.m
+%   - Segments of a concatenated recording need different metadata rows
+%     (SegmentsDiffer / SegmentIndex columns in the sheet), not just one
+%     row applied uniformly to the whole chip/well.
+%   - You want a per-recording report of which paths matched, which
+%     didn't, and why, before committing to a full (re)processing run.
+%   - You want to skip recordings that were already processed in a
+%     previous run rather than reprocessing everything from scratch.
+%
+% Pipeline: discover recordings on disk -> parse identity from each path
+% -> join against Excel metadata (by ChipWellKey + RecordingDate) -> run
+% RecordingProcessor on unmatched/new recordings only -> assemble a
+% FeatureStore from the result (chunked, via FeatureStore.fromProcessorsChunked,
+% since these runs are typically hundreds of recordings).
+%
+% Prerequisites: DeePhys on the MATLAB path (run startup.m from repo root).
+%
+% Fill in the placeholder paths in Section 0 before running.
 
 %% 0  Setup — fill in your paths
 
@@ -22,9 +37,9 @@ force_reprocess = true;
 
 % Max number of full RecordingProcessor objects held in memory at once
 % when assembling the FeatureStore. Lower this if you hit memory
-% crashes; 314 recordings crashing around 200 loaded suggests ~15-25 is
-% a reasonable starting point -- tune based on available RAM and how
-% large each recording's feature data is.
+% crashes; a few hundred recordings crashing around 200 loaded suggests
+% ~15-25 is a reasonable starting point -- tune based on available RAM
+% and how large each recording's feature data is.
 featurestore_chunk_size = 20;
 
 %% 1  Read Excel metadata
@@ -46,12 +61,22 @@ xlmeta.RecordingDate = arrayfun(@yymmddToISO, xlmeta.RecordingDate);
 xlmeta.ChipList = strtrim(xlmeta.ChipList);
 
 %% 2  Discover recordings on disk
+%
+% discoverRecordings walks base_dir for sorter_output folders, splits
+% concatenated recordings into one job per segment_N subfolder (each
+% pointing back at its parent via ParentPath), and parses ChipID/Well/
+% RecordingDate from each path via parsePathMetadata.
 
 recTable = discoverRecordings(base_dir);
 fprintf('Discovered %d recordings under %s\n', height(recTable), base_dir);
 disp(recTable(:, ["ks_path","ChipID","Well","RecordingDate","IsSegment","ParentPath","SegmentIndex0"]));
 
 %% 3  Join with Excel metadata
+%
+% joinRecordingsWithMetadata matches each discovered recording to its
+% Excel row by (ChipWellKey, RecordingDate), preferring a segment-specific
+% row (SegmentsDiffer + matching SegmentIndex) over a whole-chip row.
+% Errors loudly on ambiguous duplicate rows rather than picking one silently.
 
 jobs = joinRecordingsWithMetadata(recTable, xlmeta);
 
@@ -79,7 +104,7 @@ n = numel(todo_idx);
 proc_paths = strings(height(jobs), 1);
 status     = strings(height(jobs), 1);
 
-% Pre-fill already-processed entries so they flow straight into Section 5
+% Pre-fill already-processed entries so they flow straight into Section 6
 proc_paths(jobs.AlreadyProcessed) = jobs.proc_file(jobs.AlreadyProcessed);
 status(jobs.AlreadyProcessed) = "skipped (already processed)";
 
@@ -148,7 +173,7 @@ good  = jobs.Status == "ok" | jobs.Status == "skipped (already processed)";
 fprintf('Assembling FeatureStore from %d/%d recordings (chunk size %d)...\n', ...
     sum(good), height(jobs), featurestore_chunk_size);
 
-fs = buildFeatureStoreInChunks(proc_paths(good), out_dir, featurestore_chunk_size);
+fs = FeatureStore.fromProcessorsChunked(proc_paths(good), out_dir, featurestore_chunk_size);
 fs.save(fullfile(out_dir, 'FeatureStore_batch.mat'));
 
 fprintf('FeatureStore: %d units, %d recordings.\n', height(fs.UnitTable), height(fs.RecordingTable));

@@ -1,19 +1,55 @@
 %% Tutorial 3 — Phenotype Analysis
 %
-% Covers classification, dimensionality reduction, and regression at unit,
-% recording, and culture levels via the Experiment orchestration layer and
-% the standalone Classifier / DimReducer / Regressor classes.
+% Where Tutorial 2 is about *looking at* features, Tutorial 3 is about
+% *using* them to answer a question: does this recording/culture/unit
+% belong to genotype A or B? Does firing behaviour predict drug
+% concentration? Phenotype analysis takes the FeatureStore built in
+% Tutorial 1 and asks whether a metadata label (Mutation, EI_Ratio,
+% Concentration, ...) can be predicted from the extracted features,
+% using ML models with cross-validation that respects the data hierarchy
+% (units nest in recordings, recordings nest in cultures/chips).
+%
+% Roadmap of this file:
+%   1        Build an Experiment from saved RecordingProcessors — the
+%            orchestration object all analysis below is called on.
+%   2 - 8    Core prediction workflows at each level of the hierarchy:
+%            unit, recording, and culture. Includes classification,
+%            regression, and UMAP/PCA dimensionality reduction for
+%            visualizing separability before/instead of classifying.
+%   9        How to retrieve results already stored on the Experiment.
+%   10 - 11  Direct API — call Classifier/DimReducer yourself, bypassing
+%            Experiment, when you need a custom feature matrix or CV
+%            scheme not covered by exp.classify/exp.reduce.
+%   12 - 17  A troubleshooting/validation toolbox for when raw accuracy
+%            numbers alone aren't trustworthy: batch-effect correction
+%            (z-score or ComBat) when chips/days confound the label of
+%            interest, feature-group ablation, confusion matrices,
+%            per-feature importance, firing-rate filtering, and
+%            permutation testing to check accuracy is above chance.
+%
+% In short: reach for this tutorial once you have a FeatureStore and a
+% hypothesis of the form "does X predict Y" — not for exploring what
+% features look like (that's Tutorial 2) or for the unsupervised cell
+% type pipeline (that's Tutorial 4).
 %
 % Prerequisites:
 %   - Tutorial 1 completed (FeatureStore and RecordingProcessors saved)
 %   - DeePhys on the MATLAB path
 
 %% 1  Build Experiment from saved processors
+%
+% Discover RecordingProcessor.mat files on disk, keep a subset matching
+% this dataset's layout (the well/segment filter below is specific to this
+% example run — adapt or drop it for your own data), then wrap them in an
+% Experiment. Experiment is the object every section below is called on;
+% it owns the merged FeatureStore plus a Results struct that accumulates
+% everything computed as you go.
 
 root_path = "/net/bs-filesvr02/export/group/hierlemann/intermediate_data/Maxtwo/phornauer"; %Root path
-path_logic = {'C*','*','w*','sorter_output','segment_*','test*'}; %Variable parts
+path_logic = {'C*','*','w*','sorter_output','segment_*','test*','*'}; %Variable parts
 ei_path_list = generate_sorting_path_list(root_path, path_logic);
 fprintf("Generated %i sorting paths\n",length(ei_path_list))
+
 %%
 ei_path_list = string(ei_path_list);  % ensure string array, 1x595
 n = numel(ei_path_list);
@@ -38,9 +74,8 @@ end
 keep_idx = find(well_id > 11 & segment_id < 6);
 
 %%
-
 good_proc_paths = ei_path_list(keep_idx);
-procs = RecordingProcessor.loadMany(fullfile(good_proc_paths,'test_proc','RecordingProcessor.mat'));
+procs = RecordingProcessor.loadMany(fullfile(good_proc_paths,'RecordingProcessor.mat'));
 
 exp = Experiment.fromProcessors(procs);
 
@@ -51,14 +86,19 @@ exp = Experiment.fromProcessors(procs);
 %
 % Classifies each unit using cross-validation grouped by recording,
 % so units from the same recording are never split across train/test.
+% This is the finest-grained level: one training example per unit, which
+% gives the most data but also the most within-recording correlation —
+% hence the recording-grouped CV so that correlation can't leak into the
+% accuracy estimate.
 
 opts = struct();
+
 opts.Algorithm     = 'rf';      % 'rf' (random forest) or 'svm'
 opts.KFold         = 5;
 opts.FeatureGroups = 'all';     % or ["ActivityFeatures","WaveformFeatures"]
 opts.CVLevel       = 'recording';  % group CV at recording level
 
-result_unit = exp.classify('Unit', 'EI_Ratio', opts);
+result_unit = exp.classify('Unit', 'Concentration', opts);
 
 % Inspect result — classify() returns a (1xK) ClassificationResult array, one per fold.
 summary_unit = ClassificationResult.summarizeFolds(result_unit);
@@ -77,6 +117,12 @@ opts_parent.ParentFeatures = 'ACG';   % prefer Parent_ACG* from FeatureStore
 result_parent = exp.classify('Unit', 'EI_Ratio', opts_parent);
 
 %% 4  Unit-level dimensionality reduction
+%
+% Before trusting a classification accuracy, it helps to see whether the
+% label of interest is visually separable in feature space at all. UMAP
+% embeds every unit in 2D; coloring by the label gives a quick sanity
+% check — clear clusters suggest classification should work, a uniform
+% blob suggests it won't (or that batch effects dominate, see §12/12b).
 
 opts_umap = struct();
 opts_umap.Method       = 'UMAP';
@@ -98,6 +144,13 @@ if ~isempty(embedding) && size(embedding, 2) >= 2
 end
 
 %% 5  Recording-level classification
+%
+% Same classify() call as §2, but each row is now one whole recording's
+% aggregated features instead of one unit's — coarser-grained, far fewer
+% samples, but a natural fit when the label of interest is a property of
+% the recording/culture rather than of individual units (e.g. genotype).
+% No CVLevel needed here since there's nothing finer than a recording to
+% group by.
 
 opts_rec = struct();
 opts_rec.Algorithm = 'rf';
@@ -108,6 +161,10 @@ summary_rec = ClassificationResult.summarizeFolds(result_rec);
 fprintf('Recording-level accuracy: %.2f ± %.2f\n', summary_rec.mean_accuracy, summary_rec.std_accuracy);
 
 %% 6  Recording-level dimensionality reduction
+%
+% The recording-level analogue of §4 — same idea (visualize separability
+% before/instead of classifying), demonstrated here with PCA instead of
+% UMAP to show that exp.reduce accepts either Method interchangeably.
 
 exp.reduce('Recording', struct('Method', 'PCA'));
 pca_result = exp.Results.DimReduction.Recording.PCA;
@@ -145,6 +202,10 @@ summary_conc = RegressionResult.summarizeFolds(result_conc);
 fprintf('Concentration regression R2: %.2f\n', summary_conc.mean_R2);
 
 %% 9  Access stored results
+%
+% Every exp.classify/exp.reduce/exp.regress call above also stashed its
+% output on exp.Results, keyed by level and target/method — so you don't
+% need to keep the local variables around to revisit a result later.
 
 % All classification results
 disp(fieldnames(exp.Results.Classification));
@@ -155,6 +216,12 @@ r = exp.Results.Classification.Mutation;
 disp(r);
 
 %% 10  Direct API — bypass Experiment
+%
+% exp.classify covers the common cases, but sometimes you need a feature
+% matrix or CV grouping it doesn't expose — e.g. a hand-picked subset of
+% units, or CV groups that aren't RecordingID/ChipID. Classifier.classify
+% is the lower-level function exp.classify calls internally; using it
+% directly gives full control at the cost of doing the bookkeeping yourself.
 
 % Extract feature matrix manually
 [X, unit_ids] = exp.FeatureStore.unitMatrix('all');
@@ -170,6 +237,9 @@ opts_direct.CVGroups = rec_ids;
 result_direct = Classifier.classify(X, Y, opts_direct);
 
 %% 11  Direct API — dimensionality reduction
+%
+% Same idea as §10 but for reduction: call DimReducer.reduce directly on
+% a feature matrix you assembled yourself, bypassing exp.reduce.
 
 [X_unit, ~] = exp.FeatureStore.unitMatrix('all');
 opts_dr = struct('Method', 'UMAP', 'NDims', 2);
@@ -225,6 +295,11 @@ summary_combat = ClassificationResult.summarizeFolds(result_combat);
 fprintf('ComBat-corrected accuracy: %.2f\n', summary_combat.mean_accuracy);
 
 %% 13  Feature group selection for classification
+%
+% Ablation check: restrict FeatureGroups to a subset (here Activity +
+% Waveform, dropping e.g. ACG/graph features) to see which categories of
+% features actually carry the predictive signal, rather than treating the
+% full feature set as a black box.
 
 opts_fg = struct();
 opts_fg.FeatureGroups = ["ActivityFeatures", "WaveformFeatures"];
@@ -235,6 +310,10 @@ summary_fg = ClassificationResult.summarizeFolds(result_fg);
 fprintf('Activity+Waveform accuracy: %.2f\n', summary_fg.mean_accuracy);
 
 %% 14  Confusion matrix visualization
+%
+% A single accuracy number hides *which* classes get confused for which.
+% Pooling predictions across all folds (rather than plotting per-fold)
+% gives a more stable picture of error structure with limited data.
 
 % Aggregate predictions across all folds for a single confusion chart.
 T_unit = ClassificationResult.results2table(result_unit);
