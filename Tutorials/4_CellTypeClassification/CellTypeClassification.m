@@ -43,10 +43,20 @@
 %
 % Load a pre-built FeatureStore and build the UnitData array from saved
 % RecordingProcessors. Both are needed by CellTypeClassifier.
+%
+% Use generate_sorting_path_list to discover processor directories via a
+% path pattern, then build the .mat paths from the discovered directories.
 
-fs_file    = '/path/to/FeatureStore.mat';
-proc_paths = {'/path/to/proc1.mat', '/path/to/proc2.mat'};
+root_path  = "/net/bs-filesvr02/export/group/hierlemann/intermediate_data/Maxtwo/phornauer";
+path_logic = {'C*', '*', 'w*', 'sorter_output', 'segment_*', 'test*'};
 
+sorting_paths = generate_sorting_path_list(root_path, path_logic);
+fprintf('Discovered %d sorting paths\n', numel(sorting_paths));
+
+proc_paths = fullfile(string(sorting_paths), 'RecordingProcessor.mat');
+proc_paths = proc_paths(isfile(proc_paths));
+
+fs_file = '/path/to/FeatureStore.mat';
 fs = FeatureStore.load(fs_file);
 
 % Build UnitData array in parallel from saved processors

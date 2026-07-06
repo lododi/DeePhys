@@ -64,9 +64,16 @@ fprintf('Loaded %d units from disk.\n', numel(proc_loaded.Units));
 disp(proc_loaded.Status);
 
 %% 14  Batch loading with parallel workers
+%
+% Use the same path pattern to discover saved RecordingProcessor files.
 
-% Supply a cell array or string array of saved RecordingProcessor .mat paths
-proc_paths = {proc_file};   % replace with your full list
+load_root  = root_path;
+load_logic = {'2*', '*0*', 'Network', 'w*', 'sorter_output', 'qc_output'};
+load_paths = generate_sorting_path_list(load_root, load_logic);
+
+proc_paths = fullfile(string(load_paths), 'RecordingProcessor.mat');
+proc_paths = proc_paths(isfile(proc_paths));
+
 procs = RecordingProcessor.loadMany(proc_paths);
 fprintf('Batch-loaded %d processors.\n', numel(procs));
 

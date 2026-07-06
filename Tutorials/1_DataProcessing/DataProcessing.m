@@ -211,16 +211,22 @@ disp(proc_loaded.Status);
 % using parfor. It auto-detects legacy MEArecording format and migrates on
 % the fly, so you can point it at a mix of old and new .mat files.
 %
-% Input: string array or cell array of .mat file paths.
+% Use generate_sorting_path_list to discover recording directories via a
+% path pattern. Each element of path_logic is a glob that matches one
+% level of the directory tree under root_path.
 
-proc_paths = {proc_file_1, proc_file_2, proc_file_3, proc_file_4, proc_file_5};
+root_path  = "/net/bs-filesvr02/export/group/hierlemann/intermediate_data/Maxtwo/phornauer";
+path_logic = {'C*', '*', 'w*', 'sorter_output', 'segment_*', 'test*'};
+
+sorting_paths = generate_sorting_path_list(root_path, path_logic);
+fprintf('Discovered %d sorting paths\n', numel(sorting_paths));
+
+% Build .mat paths from the discovered directories
+proc_paths = fullfile(string(sorting_paths), 'RecordingProcessor.mat');
+proc_paths = proc_paths(isfile(proc_paths));   % keep only existing files
+
 procs = RecordingProcessor.loadMany(proc_paths);
 fprintf('Batch-loaded %d processors.\n', numel(procs));
-
-% You can also load from a directory listing:
-%   all_mats = dir(fullfile(data_dir, '**/RecordingProcessor.mat'));
-%   all_paths = fullfile({all_mats.folder}, {all_mats.name});
-%   procs = RecordingProcessor.loadMany(all_paths);
 
 %% 15  Assemble FeatureStore from multiple processors
 %
@@ -240,12 +246,16 @@ fprintf('MetadataTable : %d rows x %d cols\n', height(fs.MetadataTable),  width(
 % in parallel and saves each result to disk, keeping memory bounded.
 % Returns string array of output paths (empty string for failed conversions).
 %
-% This is the recommended way to migrate a large collection of old recordings.
+% Use generate_sorting_path_list to discover legacy recordings by path pattern.
 
-% legacy_mats = {'/path/to/rec1/MEArecording.mat', ...
-%                '/path/to/rec2/MEArecording.mat', ...
-%                '/path/to/rec3/MEArecording.mat'};
-% converted_dir = '/path/to/converted';
+% legacy_root  = "/net/bs-filesvr02/export/group/hierlemann/intermediate_data/Maxtwo/phornauer";
+% legacy_logic = {'C*', '*', 'w*', 'sorter_output', 'segment_*'};
+% legacy_dirs  = generate_sorting_path_list(legacy_root, legacy_logic);
+% fprintf('Found %d legacy directories\n', numel(legacy_dirs));
+%
+% legacy_mats    = fullfile(string(legacy_dirs), 'MEArecording.mat');
+% legacy_mats    = legacy_mats(isfile(legacy_mats));
+% converted_dir  = "/path/to/converted";
 %
 % converted_paths = RecordingProcessor.convertMany(legacy_mats, converted_dir);
 %
