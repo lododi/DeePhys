@@ -73,8 +73,8 @@ function allSD = generate_spikedata_from_sorting_path_list(PATH_LIST, SHEET_PATH
         end
 
         platDateRaw = char(T.PlatingDate(rowIdx));
-        recDateISO  = datestr(datenum(recDateRaw,  'yymmdd'), 'yyyy-mm-dd');
-        platDateISO = datestr(datenum(platDateRaw, 'yymmdd'), 'yyyy-mm-dd');
+        recDateISO  = char(yymmddToISO(recDateRaw));
+        platDateISO = char(yymmddToISO(platDateRaw));
 
         metadata = struct();
         metadata.ChipID        = chipID;

@@ -10,7 +10,7 @@ function saveDiagnosticFigure(ctc, fig, stage_name)
         if ~isfolder(d.SaveDir)
             mkdir(d.SaveDir);
         end
-        ts       = datestr(now, 'yyyymmdd_HHMMSS'); %#ok<TNOW1,DATST>
+        ts       = char(datetime('now', 'Format', 'yyyyMMdd_HHmmss'));
         fname    = fullfile(d.SaveDir, sprintf('diag_%s_%s.png', stage_name, ts));
         exportgraphics(fig, fname, 'Resolution', 150);
     end
