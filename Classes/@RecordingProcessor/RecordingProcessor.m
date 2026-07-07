@@ -1408,6 +1408,38 @@ classdef RecordingProcessor < handle
             ok = true;
         end
 
+        function ok = recomputeParentACGFull(file_path, acg_params)
+        % RECOMPUTEPARENTACGFULL  Recompute and re-save Parent_ACG* via a full
+        %   RecordingProcessor load/save — the thorough counterpart to
+        %   recomputeParentACGLight.
+        %
+        %   ok = RecordingProcessor.recomputeParentACGFull(file_path, acg_params)
+        %
+        %   Slower than recomputeParentACGLight (also reads/writes
+        %   Connectivity, Bursts, and raw SpikeData), but the main .mat file
+        %   and its sidecar stay in sync the whole time — never leaves a
+        %   SidecarAheadOfMain gap, so there's nothing to sync later. Prefer
+        %   this when you're recomputing a modest number of recordings and
+        %   would rather not think about the staleness flag at all; prefer
+        %   recomputeParentACGLight for large batches where the full load
+        %   would be the dominant cost.
+            arguments
+                file_path  (1,1) string
+                acg_params struct = struct()
+            end
+            try
+                proc = RecordingProcessor.load(file_path);
+                proc.Status.ParentFeatures = "pending";
+                proc.computeParentFeatures(acg_params);
+                proc.save(file_path);
+                ok = true;
+            catch ME
+                warning('RecordingProcessor:recomputeParentACGFull', ...
+                    'Failed to recompute Parent_ACG for %s: %s', file_path, ME.message);
+                ok = false;
+            end
+        end
+
         function backfillFeatureSidecars(file_paths)
         % BACKFILLFEATURESIDECARS  Write feature sidecars for already-saved
         %   RecordingProcessor.mat files that predate save()'s automatic
@@ -1432,6 +1464,82 @@ classdef RecordingProcessor < handle
                 end
             end
             fprintf('backfillFeatureSidecars: done.\n');
+        end
+
+        function status = syncMainFile(file_path)
+        % SYNCMAINFILE  Bring a main RecordingProcessor.mat back in sync with
+        %   its sidecar after recomputeParentACGLight flagged it
+        %   SidecarAheadOfMain (i.e. the sidecar has a Parent_ACG* fix the
+        %   main file doesn't).
+        %
+        %   status = RecordingProcessor.syncMainFile(file_path)
+        %
+        %   Reads the already-correct ParentACGBinSize/Lag from the sidecar
+        %   (not a guess), recomputes Parent_ACG on the full processor with
+        %   those exact params, and re-saves both files — which clears the
+        %   staleness flag since save() writes them from the same in-memory
+        %   state.
+        %
+        %   Returns one of:
+        %     "synced"          — was stale, successfully brought back in sync
+        %     "already_in_sync" — sidecar wasn't flagged as ahead; nothing to do
+        %     "no_sidecar"      — no sidecar exists for this file
+        %     "failed"          — sync was attempted but errored (see warning)
+            arguments
+                file_path (1,1) string
+            end
+            sidecar_path = RecordingProcessor.sidecarPath(file_path);
+            if ~isfile(sidecar_path)
+                status = "no_sidecar";
+                return
+            end
+
+            var_info = whos('-file', sidecar_path);
+            if ~ismember('SidecarAheadOfMain', {var_info.name})
+                status = "already_in_sync";
+                return
+            end
+            flag = load(sidecar_path, 'SidecarAheadOfMain');
+            if ~flag.SidecarAheadOfMain
+                status = "already_in_sync";
+                return
+            end
+
+            % Delegates to recomputeParentACGFull with the params already
+            % fixed in the sidecar (not a guess) — the staleness warning from
+            % RecordingProcessor.load() fires here too, expected.
+            p = load(sidecar_path, 'ParentACGBinSize', 'ParentACGLag');
+            if RecordingProcessor.recomputeParentACGFull(file_path, ...
+                    struct('BinSize', p.ParentACGBinSize, 'Lag', p.ParentACGLag))
+                status = "synced";
+            else
+                status = "failed";
+            end
+        end
+
+        function n_synced = syncMainFiles(file_paths)
+        % SYNCMAINFILES  Batch RecordingProcessor.syncMainFile over many paths.
+        %
+        %   n_synced = RecordingProcessor.syncMainFiles(proc_files)
+        %
+        %   Serial (not parfor) — ParentSpikeLoader's full-recording ACG cache
+        %   is per-process, so running this serially lets sibling recordings
+        %   sharing the same parent reuse one computation instead of each
+        %   parallel worker redoing it independently.
+            arguments
+                file_paths string
+            end
+            file_paths = file_paths(:);
+            n = numel(file_paths);
+            n_synced = 0;
+            for i = 1:n
+                status = RecordingProcessor.syncMainFile(file_paths(i));
+                if status == "synced"
+                    n_synced = n_synced + 1;
+                    fprintf('[%d/%d] synced %s\n', i, n, file_paths(i));
+                end
+            end
+            fprintf('syncMainFiles: synced %d/%d files.\n', n_synced, n);
         end
 
         function applyLabelsFromClassifier(proc_array, ctc)
