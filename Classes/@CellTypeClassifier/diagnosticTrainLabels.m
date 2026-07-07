@@ -83,8 +83,9 @@ try
 
     all_y      = [y_inh; y_exc];
     all_labels = [fliplr(inh_labels), fliplr(exc_labels)];
-    yticks(all_y);
-    yticklabels(all_labels);
+    [all_y_sorted, sort_ord] = sort(all_y);   % yticks requires increasing values
+    yticks(all_y_sorted);
+    yticklabels(all_labels(sort_ord));
     xlabel('Unit count');
     title('Label pipeline funnel');
     box off;
