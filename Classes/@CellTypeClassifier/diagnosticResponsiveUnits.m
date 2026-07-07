@@ -140,9 +140,16 @@ try
     resp_u         = ismember(detail.unit_ids, resp_uids_dr)';  % ensure row vector
 
     % Normalize each unit's curve to its baseline (FR at the lowest dose).
-    % Units with zero or NaN baseline are excluded from normalized plots.
+    % Use the same floor as identifyResponsiveUnits' Stage 2 fold-change
+    % guard (0.01 Hz) -- a bare ">0" check lets near-silent baselines
+    % (e.g. 0.001 Hz) through, producing artificially enormous (1000s-fold)
+    % normalized values that squash the rest of the plot. Units below the
+    % floor are excluded here rather than floored, since floor-then-divide
+    % would still show a fold change that's an artifact of the floor rather
+    % than the unit's actual firing.
+    fr_floor        = 0.01;  % Hz -- matches identifyResponsiveUnits Stage 2
     fr_baseline     = fr_mat(:, 1);
-    valid_baseline  = fr_baseline > 0 & isfinite(fr_baseline);
+    valid_baseline  = fr_baseline >= fr_floor & isfinite(fr_baseline);
     fr_norm         = nan(size(fr_mat));
     fr_norm(valid_baseline, :) = fr_mat(valid_baseline, :) ./ fr_baseline(valid_baseline);
 
