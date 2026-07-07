@@ -140,14 +140,19 @@ try
     resp_u         = ismember(detail.unit_ids, resp_uids_dr)';  % ensure row vector
 
     % Normalize each unit's curve to its baseline (FR at the lowest dose).
-    % Use the same floor as identifyResponsiveUnits' Stage 2 fold-change
-    % guard (0.01 Hz) -- a bare ">0" check lets near-silent baselines
-    % (e.g. 0.001 Hz) through, producing artificially enormous (1000s-fold)
-    % normalized values that squash the rest of the plot. Units below the
-    % floor are excluded here rather than floored, since floor-then-divide
-    % would still show a fold change that's an artifact of the floor rather
-    % than the unit's actual firing.
-    fr_floor        = 0.01;  % Hz -- matches identifyResponsiveUnits Stage 2
+    %
+    % Deliberately uses a HIGHER floor (0.1 Hz) than identifyResponsiveUnits'
+    % own Stage 2 fold-change guard (0.01 Hz) -- that lower floor is a
+    % division-by-zero guard for the classifier, tuned to not miss real
+    % low-firing responders, not a "this baseline is reliable" threshold.
+    % 0.1 Hz matches this codebase's established near-silent-unit convention
+    % (see FeatureStore.unitMatrix's MinFiringRate / Tutorial 3): units below
+    % it have too few spikes for a stable baseline estimate, so even a small
+    % absolute FR change produces an enormous, visually-dominant fold change
+    % that's an artifact of counting noise rather than a real response.
+    % Excluded here (not floored), since floor-then-divide would still show
+    % a fold change that's an artifact of the floor rather than real firing.
+    fr_floor        = 0.1;  % Hz -- near-silent-unit convention (Tutorial 3 MinFiringRate)
     fr_baseline     = fr_mat(:, 1);
     valid_baseline  = fr_baseline >= fr_floor & isfinite(fr_baseline);
     fr_norm         = nan(size(fr_mat));
