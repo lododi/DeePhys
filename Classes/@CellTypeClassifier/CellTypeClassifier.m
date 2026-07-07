@@ -515,8 +515,25 @@ classdef CellTypeClassifier < handle
                 fprintf('fromDatabase: %d/%d files found, skipping %d missing\n', ...
                     sum(found), numel(found), sum(~found));
             end
-            procs = RecordingProcessor.loadMany(proc_paths(found));
-            ctc = CellTypeClassifier.fromProcessors(procs, parameters);
+            % Build the FeatureStore and Units array from the lightweight
+            % feature sidecar (RecordingProcessor.loadForFeatureStore) rather
+            % than full RecordingProcessor.loadMany — skips Connectivity/
+            % Bursts/raw SpikeData, which are unused here and commonly
+            % 10-20x the size of everything else in a saved processor.
+            % Legacy MEArecording.mat files (no sidecar) fall back to a full
+            % load automatically, same as before, just without the speedup.
+            good_paths = proc_paths(found);
+            fs = FeatureStore.fromProcessorPaths(good_paths);
+            n  = numel(good_paths);
+            ud_cell = cell(1, n);
+            parfor i = 1:n
+                s = RecordingProcessor.loadForFeatureStore(good_paths(i));
+                if ~isempty(s.RecordingID) && ~isempty(s.UnitFeatureTable) && ~isempty(s.Units)
+                    ud_cell{i} = s.Units;
+                end
+            end
+            ud  = [ud_cell{:}];
+            ctc = CellTypeClassifier(fs, ud, parameters);
         end
 
         function ctc = fromLegacyGroup(rg, parameters)

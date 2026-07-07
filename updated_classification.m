@@ -46,21 +46,27 @@ proc_paths = full_sorting_path_list + "/MEArecording.mat";
 target_paths = target_sorting_path_list + "/MEArecording.mat";
 
 
-procs = RecordingProcessor.loadMany(proc_paths);
-fs    = FeatureStore.fromProcessors(procs);
-
-target_procs = RecordingProcessor.loadMany(target_paths);
-target_fs    = FeatureStore.fromProcessors(target_procs);
+% Only FeatureStores + Units (waveform/ACG) are needed below, not
+% Connectivity/Bursts/raw SpikeData — FeatureStore.fromProcessorPaths and
+% RecordingProcessor.loadForFeatureStore read each recording's lightweight
+% feature sidecar instead of the full processor (commonly 10-20x smaller).
+% Legacy MEArecording.mat files without a sidecar fall back to a full load
+% automatically (same result, just without the speedup).
+fs        = FeatureStore.fromProcessorPaths(proc_paths);
+target_fs = FeatureStore.fromProcessorPaths(target_paths);
 %%
-cortex_idx = fs.MetadataTable.Region == "Cortex" & fs.MetadataTable.Concentration ~= Inf;
-cortex_procs = [procs(cortex_idx), target_procs];
-cortex_fs    = FeatureStore.fromProcessors(cortex_procs);
+cortex_idx        = fs.MetadataTable.Region == "Cortex" & fs.MetadataTable.Concentration ~= Inf;
+cortex_proc_paths = proc_paths(cortex_idx);
+cortex_paths      = [cortex_proc_paths(:); target_paths(:)];  % (:) avoids row/column mismatch
+cortex_fs         = FeatureStore.fromProcessorPaths(cortex_paths);
 
 % Build UnitData array in FeatureStore row order
-ud = [];
-for i = 1:numel(cortex_procs)
-    ud = [ud, cortex_procs(i).Units];
+ud_cell = cell(1, numel(cortex_paths));
+parfor i = 1:numel(cortex_paths)
+    s = RecordingProcessor.loadForFeatureStore(cortex_paths(i));
+    ud_cell{i} = s.Units;
 end
+ud = [ud_cell{:}];
 
 fprintf('FeatureStore: %d units across %d recordings\n', ...
     height(cortex_fs.UnitTable), height(cortex_fs.RecordingTable));

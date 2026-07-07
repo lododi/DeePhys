@@ -154,6 +154,79 @@ classdef FeatureStore < handle
             fs = FeatureStore.assembleFromCells(unit_tables, recording_rows, metadata_rows);
         end
 
+        function fs = fromProcessorPaths(proc_paths)
+            % FROMPROCESSORPATHS  Assemble a FeatureStore directly from saved
+            %   RecordingProcessor.mat paths, without loading full
+            %   RecordingProcessor objects (Connectivity, Bursts, raw
+            %   SpikeData) into memory.
+            %
+            %   Uses RecordingProcessor.loadForFeatureStore per path, which
+            %   reads the lightweight sidecar written by
+            %   RecordingProcessor.save() (falls back to a full load with a
+            %   warning if a path has no sidecar yet — see
+            %   RecordingProcessor.backfillFeatureSidecars for one-time
+            %   migration). Connectivity alone is commonly 10-20x the size of
+            %   everything else in a saved processor, so this is typically
+            %   an order of magnitude less data moved than
+            %   RecordingProcessor.loadMany + FeatureStore.fromProcessors —
+            %   and since sidecar data is small, it's safe to call on the
+            %   full path list at once; no chunking needed the way
+            %   fromProcessorsChunked is for full processors.
+            %
+            %   fs = FeatureStore.fromProcessorPaths(proc_paths)
+            arguments
+                proc_paths string
+            end
+            proc_paths = proc_paths(:);
+            n = numel(proc_paths);
+            unit_tables    = cell(n, 1);
+            recording_rows = cell(n, 1);
+            metadata_rows  = cell(n, 1);
+
+            parfor i = 1:n
+                s = RecordingProcessor.loadForFeatureStore(proc_paths(i));
+                if isempty(s.RecordingID)
+                    warning('FeatureStore:emptyProcessor', ...
+                        'Processor at %s has no RecordingID — skipping.', proc_paths(i));
+                    continue
+                end
+                rec_id = s.RecordingID;
+
+                status_fields = fieldnames(s.Status);
+                for sf = 1:numel(status_fields)
+                    if isfield(s.Status, status_fields{sf}) && ...
+                            isstring(s.Status.(status_fields{sf})) && ...
+                            s.Status.(status_fields{sf}) == "failed"
+                        warning('FeatureStore:failedAnalysis', ...
+                            'Recording %s: %s analysis failed — results may be incomplete.', ...
+                            rec_id, status_fields{sf});
+                    end
+                end
+
+                if ~isempty(s.UnitFeatureTable) && ~isempty(s.Units)
+                    uft      = s.UnitFeatureTable;
+                    unit_ids = string({s.Units.UnitID})';
+                    meta_row = FeatureStore.metadataStructToRow(s.Metadata);
+                    meta_rep = repmat(meta_row, height(uft), 1);
+                    id_tbl   = table(unit_ids, repmat(string(rec_id), height(uft), 1), ...
+                        'VariableNames', {'UnitID','RecordingID'});
+                    unit_tables{i} = [id_tbl, meta_rep, uft];
+                end
+
+                if ~isempty(s.NetworkFeatureTable)
+                    meta_row = FeatureStore.metadataStructToRow(s.Metadata);
+                    id_tbl   = table(string(rec_id), 'VariableNames', {'RecordingID'});
+                    recording_rows{i} = [id_tbl, meta_row, s.NetworkFeatureTable];
+                end
+
+                meta_row = FeatureStore.metadataStructToRow(s.Metadata);
+                id_tbl   = table(string(rec_id), 'VariableNames', {'RecordingID'});
+                metadata_rows{i} = [id_tbl, meta_row];
+            end
+
+            fs = FeatureStore.assembleFromCells(unit_tables, recording_rows, metadata_rows);
+        end
+
         function fs = fromProcessorsChunked(proc_paths, out_dir, chunk_size)
             % FROMPROCESSORSCHUNKED  Assemble a FeatureStore from many saved
             %   RecordingProcessor.mat files without holding more than
@@ -168,6 +241,16 @@ classdef FeatureStore < handle
             %   out_dir (FeatureStore_chunk_NNN.mat, left on disk for
             %   resuming/inspection) before combining their lightweight tables
             %   into one FeatureStore.
+            %
+            %   If you only need the FeatureStore (not the full
+            %   RecordingProcessor objects afterward), prefer
+            %   FeatureStore.fromProcessorPaths(proc_paths) instead — it skips
+            %   loading Connectivity/Bursts/raw SpikeData in the first place
+            %   via RecordingProcessor.loadForFeatureStore, so it needs no
+            %   chunking at all and is typically much faster. This chunked
+            %   method remains useful when you need the actual processors
+            %   in memory (e.g. to keep working with them afterward) or want
+            %   disk-persisted, resumable chunk files.
             %
             %   fs = FeatureStore.fromProcessorsChunked(proc_paths, out_dir)
             %   fs = FeatureStore.fromProcessorsChunked(proc_paths, out_dir, 20)

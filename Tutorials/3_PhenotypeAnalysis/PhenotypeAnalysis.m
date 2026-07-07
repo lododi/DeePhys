@@ -44,6 +44,16 @@
 % Experiment. Experiment is the object every section below is called on;
 % it owns the merged FeatureStore plus a Results struct that accumulates
 % everything computed as you go.
+%
+% Everything below only needs FeatureStore-level data (classify/reduce/
+% regress never touch exp.Processors), so FeatureStore.fromProcessorPaths
+% + Experiment.fromFeatureStore is used instead of RecordingProcessor.loadMany
+% + Experiment.fromProcessors — it skips loading each recording's
+% Connectivity/Bursts/raw SpikeData (commonly 10-20x the size of what's
+% actually used here), typically an order of magnitude faster for large
+% recording counts. If you need exp.Processors itself (e.g. to re-run raw
+% analyses afterward), use Experiment.fromProcessors(RecordingProcessor.loadMany(...))
+% instead.
 
 root_path = "/net/bs-filesvr02/export/group/hierlemann/intermediate_data/Maxtwo/phornauer"; %Root path
 path_logic = {'C*','*','w*','sorter_output','segment_*','test*','*'}; %Variable parts
@@ -75,10 +85,15 @@ keep_idx = find(well_id > 11 & segment_id < 6);
 
 %%
 good_proc_paths = ei_path_list(keep_idx);
-procs = RecordingProcessor.loadMany(fullfile(good_proc_paths,'RecordingProcessor.mat'));
+proc_files = fullfile(good_proc_paths,'RecordingProcessor.mat');
 
-exp = Experiment.fromProcessors(procs);
+fs  = FeatureStore.fromProcessorPaths(proc_files);
+exp = Experiment.fromFeatureStore(fs);
 
+% Need the actual processors afterward (e.g. to re-run raw analyses)?
+%   procs = RecordingProcessor.loadMany(proc_files);
+%   exp   = Experiment.fromProcessors(procs);
+%
 % Or from a saved FeatureStore directly (skip the processors):
 %   exp = Experiment.fromLegacyGroup(rg);   % from old RecordingGroup
 

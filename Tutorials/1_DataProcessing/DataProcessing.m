@@ -233,6 +233,16 @@ fprintf('Batch-loaded %d processors.\n', numel(procs));
 % FeatureStore.fromProcessors concatenates all unit/recording/metadata tables
 % from the loaded processors into a single FeatureStore. Processors with
 % empty SpikeData or no units are skipped automatically.
+%
+% This is the right call when you already have procs loaded for other
+% reasons (as here). If building the FeatureStore is your ONLY goal, skip
+% §14's loadMany entirely and call FeatureStore.fromProcessorPaths(proc_paths)
+% instead — it reads each recording's lightweight feature sidecar rather
+% than the full processor (Connectivity/Bursts/raw SpikeData are commonly
+% 10-20x the size of what's actually used here), typically an order of
+% magnitude faster:
+%
+%   fs = FeatureStore.fromProcessorPaths(proc_paths);
 
 fs = FeatureStore.fromProcessors(procs);
 
@@ -270,11 +280,15 @@ fprintf('Converted and loaded %d processors.\n', numel(procs_converted));
 
 %% 17  Chunked FeatureStore assembly for large datasets
 %
-% When the number of recordings is large (hundreds+), loading all processors
-% simultaneously may exceed available memory. FeatureStore.fromProcessorsChunked
-% loads them in batches, builds a FeatureStore per chunk, saves to disk,
-% then combines the lightweight table-only results — same output as
-% FeatureStore.fromProcessors (§15), just with bounded peak memory.
+% Prefer FeatureStore.fromProcessorPaths(proc_paths) (§15) — it never loads
+% full processors in the first place, so there's usually nothing to chunk.
+% Reach for the chunked version below only when you specifically need actual
+% RecordingProcessor objects in memory afterward (not just the FeatureStore),
+% since loading all of those simultaneously for hundreds of recordings can
+% exceed available memory. FeatureStore.fromProcessorsChunked loads them in
+% batches, builds a FeatureStore per chunk, saves to disk, then combines the
+% lightweight table-only results — same output as FeatureStore.fromProcessors
+% (§15), just with bounded peak memory.
 %
 % Adjust chunk_size based on available RAM (lower = less memory, slower).
 

@@ -17,8 +17,10 @@
 % Pipeline: discover recordings on disk -> parse identity from each path
 % -> join against Excel metadata (by ChipWellKey + RecordingDate) -> run
 % RecordingProcessor on unmatched/new recordings only -> assemble a
-% FeatureStore from the result (chunked, via FeatureStore.fromProcessorsChunked,
-% since these runs are typically hundreds of recordings).
+% FeatureStore from the result via FeatureStore.fromProcessorPaths, which
+% reads each recording's lightweight feature sidecar rather than the full
+% processor -- safe to call on the whole path list at once even for
+% hundreds of recordings (see RecordingProcessor.save/loadForFeatureStore).
 %
 % Prerequisites: DeePhys on the MATLAB path (run startup.m from repo root).
 %
@@ -35,12 +37,9 @@ out_dir   = '/net/bs-filesvr02/export/group/hierlemann/intermediate_data/Maxtwo/
 % skip already-processed recordings and only run new/failed ones.
 force_reprocess = true;
 
-% Max number of full RecordingProcessor objects held in memory at once
-% when assembling the FeatureStore. Lower this if you hit memory
-% crashes; a few hundred recordings crashing around 200 loaded suggests
-% ~15-25 is a reasonable starting point -- tune based on available RAM
-% and how large each recording's feature data is.
-featurestore_chunk_size = 20;
+% FeatureStore.fromProcessorPaths (used below) reads each recording's
+% lightweight feature sidecar rather than the full processor, so no
+% memory-bounded chunking is needed here even for hundreds of recordings.
 
 %% 1  Read Excel metadata
 
@@ -167,13 +166,12 @@ writetable(removevars(jobs, intersect(jobs.Properties.VariableNames, {'AlreadyPr
     fullfile(out_dir, 'batch_run_log.csv'));
 disp(jobs(:, ["ks_path","ChipWellKey","RecordingDate","Status"]));
 
-%% 6  Batch-load and assemble FeatureStore (chunked to bound peak memory)
+%% 6  Batch-load and assemble FeatureStore
 
 good  = jobs.Status == "ok" | jobs.Status == "skipped (already processed)";
-fprintf('Assembling FeatureStore from %d/%d recordings (chunk size %d)...\n', ...
-    sum(good), height(jobs), featurestore_chunk_size);
+fprintf('Assembling FeatureStore from %d/%d recordings...\n', sum(good), height(jobs));
 
-fs = FeatureStore.fromProcessorsChunked(proc_paths(good), out_dir, featurestore_chunk_size);
+fs = FeatureStore.fromProcessorPaths(proc_paths(good));
 fs.save(fullfile(out_dir, 'FeatureStore_batch.mat'));
 
 fprintf('FeatureStore: %d units, %d recordings.\n', height(fs.UnitTable), height(fs.RecordingTable));

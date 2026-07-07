@@ -74,12 +74,19 @@ load_paths = generate_sorting_path_list(load_root, load_logic);
 proc_paths = fullfile(string(load_paths), 'RecordingProcessor.mat');
 proc_paths = proc_paths(isfile(proc_paths));
 
-procs = RecordingProcessor.loadMany(proc_paths);
-fprintf('Batch-loaded %d processors.\n', numel(procs));
+% Only building a FeatureStore below, so skip loading full processors
+% (Connectivity/Bursts/raw SpikeData) entirely — see §15.
 
 %% 15  Assemble FeatureStore from multiple processors
+%
+% FeatureStore.fromProcessorPaths reads each recording's lightweight
+% feature sidecar (written automatically by RecordingProcessor.save())
+% instead of the full processor — typically an order of magnitude less
+% data moved, and no chunking needed even for hundreds of recordings.
+% Need the actual processors afterward instead? Use
+% RecordingProcessor.loadMany(proc_paths) + FeatureStore.fromProcessors(procs).
 
-fs = FeatureStore.fromProcessors(procs);
+fs = FeatureStore.fromProcessorPaths(proc_paths);
 
 % Three tables
 fprintf('UnitTable     : %d rows × %d cols\n', height(fs.UnitTable),      width(fs.UnitTable));

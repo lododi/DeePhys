@@ -86,12 +86,17 @@ end
 keep_idx = find(well_id > 11 & segment_id < 6);
 
 %%
+% Only Units (with waveform/ACG data) are needed here, not Connectivity/
+% Bursts/raw SpikeData — RecordingProcessor.loadForFeatureStore reads the
+% lightweight feature sidecar (written automatically by save()) instead of
+% the full processor, typically an order of magnitude less data per file.
 good_proc_paths = sorting_paths(keep_idx);
-procs = RecordingProcessor.loadMany(fullfile(good_proc_paths,'RecordingProcessor.mat'));
+proc_files = fullfile(good_proc_paths,'RecordingProcessor.mat');
 
-%%
-parfor i = 1:length(procs)
-    ud_cell{i} = procs(i).Units;
+ud_cell = cell(1, numel(proc_files));
+parfor i = 1:numel(proc_files)
+    s = RecordingProcessor.loadForFeatureStore(proc_files(i));
+    ud_cell{i} = s.Units;
 end
 ud = [ud_cell{:}];
 clear ud_cell
@@ -102,7 +107,8 @@ clear ud_cell
 % experiment. A minimal call needs only GroupingVar / GroupingValues.
 % Start with defaults; tune only what diagnostics flag.
 
-params = struct();
+params = CellTypeClassifier.returnDefaultParams();
+%params = struct();
 
 % ── Harmonization ────────────────────────────────────────────────────────
 params.Harmonization.ACGBinSize = 0.0001;

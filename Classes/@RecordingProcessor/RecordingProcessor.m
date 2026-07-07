@@ -786,6 +786,36 @@ classdef RecordingProcessor < handle
             builtin('save', file_path, 'SpikeDataStruct', 'UnitsStructArray', ...
                 'UnitFeatureTable', 'NetworkFeatureTable', ...
                 'Connectivity', 'Bursts', 'CellTypeLabels', 'Parameters', 'Status');
+
+            proc.saveFeatureSidecar(file_path);
+        end
+
+        function saveFeatureSidecar(proc, file_path)
+        % SAVEFEATURESIDECAR  Write a lightweight companion .mat alongside
+        %   file_path containing everything FeatureStore assembly and
+        %   cell-type classification's raw-unit access need — RecordingID,
+        %   Metadata, Units, UnitFeatureTable, NetworkFeatureTable, Status —
+        %   without Connectivity, Bursts, or the raw SpikeData spike
+        %   times/templates/waveforms. Connectivity alone is commonly 10-20x
+        %   the size of everything else combined, so this sidecar is a
+        %   fraction of the full file's size.
+        %
+        %   Called automatically by save(). Call directly to backfill a
+        %   sidecar for a file saved before this existed — or in bulk via
+        %   RecordingProcessor.backfillFeatureSidecars(proc_paths).
+            arguments
+                proc      RecordingProcessor
+                file_path (1,1) string
+            end
+            RecordingID         = proc.SpikeData.RecordingID;    %#ok<PROP>
+            Metadata            = proc.SpikeData.Metadata;       %#ok<PROP>
+            UnitsStructArray    = arrayfun(@RecordingProcessor.valueToStruct, proc.Units); %#ok<PROP>
+            UnitFeatureTable    = proc.UnitFeatureTable;    %#ok<PROP>
+            NetworkFeatureTable = proc.NetworkFeatureTable; %#ok<PROP>
+            Status              = proc.Status;              %#ok<PROP>
+            sidecar_path = RecordingProcessor.sidecarPath(file_path);
+            builtin('save', sidecar_path, 'RecordingID', 'Metadata', 'UnitsStructArray', ...
+                'UnitFeatureTable', 'NetworkFeatureTable', 'Status');
         end
 
     end
@@ -1140,6 +1170,90 @@ classdef RecordingProcessor < handle
             else
                 status = RecordingProcessor.emptyStatus();
             end
+        end
+
+        function p = sidecarPath(file_path)
+        % SIDECARPATH  Derive the feature-sidecar path for a RecordingProcessor.mat path.
+        %   ".../RecordingProcessor.mat" -> ".../RecordingProcessor_features.mat"
+            arguments
+                file_path (1,1) string
+            end
+            [d, n, ~] = fileparts(char(file_path));
+            p = string(fullfile(d, [n '_features.mat']));
+        end
+
+        function s = loadForFeatureStore(file_path)
+        % LOADFORFEATURESTORE  Load only what FeatureStore assembly and
+        %   cell-type classification's raw-unit access need — RecordingID,
+        %   Metadata, Units, UnitFeatureTable, NetworkFeatureTable, Status —
+        %   skipping Connectivity, Bursts, and raw SpikeData (typically the
+        %   large majority of a RecordingProcessor.mat's size).
+        %
+        %   Uses the sidecar written by save()/saveFeatureSidecar(). Falls
+        %   back to a full RecordingProcessor.load() (slower, but correct)
+        %   with a warning if no sidecar exists yet — run
+        %   RecordingProcessor.backfillFeatureSidecars(proc_paths) once to
+        %   migrate files saved before this existed.
+        %
+        %   Returns a struct with fields: RecordingID, Metadata, Units
+        %   (UnitData array), UnitFeatureTable, NetworkFeatureTable, Status.
+            arguments
+                file_path (1,1) string
+            end
+            sidecar_path = RecordingProcessor.sidecarPath(file_path);
+            if isfile(sidecar_path)
+                raw = load(sidecar_path, 'RecordingID', 'Metadata', 'UnitsStructArray', ...
+                    'UnitFeatureTable', 'NetworkFeatureTable', 'Status');
+                s.RecordingID = raw.RecordingID;
+                s.Metadata    = raw.Metadata;
+                if ~isempty(raw.UnitsStructArray)
+                    s.Units = arrayfun(@UnitData.fromStruct, raw.UnitsStructArray);
+                else
+                    s.Units = UnitData.empty;
+                end
+                s.UnitFeatureTable    = raw.UnitFeatureTable;
+                s.NetworkFeatureTable = raw.NetworkFeatureTable;
+                s.Status              = raw.Status;
+            else
+                warning('RecordingProcessor:noSidecar', ...
+                    ['No feature sidecar found for %s — falling back to a full load ' ...
+                     '(also reads Connectivity/Bursts/raw SpikeData, much slower). ' ...
+                     'Run RecordingProcessor.backfillFeatureSidecars(proc_paths) once to migrate.'], ...
+                    file_path);
+                proc = RecordingProcessor.load(file_path);
+                s.RecordingID         = proc.SpikeData.RecordingID;
+                s.Metadata            = proc.SpikeData.Metadata;
+                s.Units               = proc.Units;
+                s.UnitFeatureTable    = proc.UnitFeatureTable;
+                s.NetworkFeatureTable = proc.NetworkFeatureTable;
+                s.Status              = proc.Status;
+            end
+        end
+
+        function backfillFeatureSidecars(file_paths)
+        % BACKFILLFEATURESIDECARS  Write feature sidecars for already-saved
+        %   RecordingProcessor.mat files that predate save()'s automatic
+        %   sidecar. One-time migration per existing dataset — afterward,
+        %   loadForFeatureStore / FeatureStore.fromProcessorPaths take the
+        %   fast path automatically.
+        %
+        %   RecordingProcessor.backfillFeatureSidecars(proc_paths)
+            arguments
+                file_paths string
+            end
+            file_paths = file_paths(:);
+            n = numel(file_paths);
+            fprintf('backfillFeatureSidecars: writing sidecars for %d files...\n', n);
+            parfor i = 1:n
+                try
+                    proc = RecordingProcessor.load(file_paths(i));
+                    proc.saveFeatureSidecar(file_paths(i));
+                catch ME
+                    warning('RecordingProcessor:backfillFeatureSidecars', ...
+                        'Failed for %s: %s', file_paths(i), ME.message);
+                end
+            end
+            fprintf('backfillFeatureSidecars: done.\n');
         end
 
         function applyLabelsFromClassifier(proc_array, ctc)

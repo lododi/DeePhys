@@ -110,6 +110,12 @@ classdef Experiment < handle
 
         function exp = fromPaths(processor_paths, parameters)
         % FROMPATHS  Load processors from file paths and build Experiment.
+        %
+        %   Loads full RecordingProcessor objects (Connectivity, Bursts, raw
+        %   SpikeData included) and keeps them on exp.Processors. If you only
+        %   need exp.FeatureStore for classify/reduce/regress — not the raw
+        %   processors — prefer the lighter, faster combination instead:
+        %     exp = Experiment.fromFeatureStore(FeatureStore.fromProcessorPaths(processor_paths));
             arguments
                 processor_paths     % string array or cell array of paths
                 parameters struct = struct()
