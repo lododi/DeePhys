@@ -41,10 +41,12 @@ target_sorting_path_list = generate_sorting_path_list(root_path, path_logic, spl
 % /net/bs-filesvr02/export/group/hierlemann/intermediate_data/Maxtwo/phornauer/Chemogenetics/Cellexp_Mouse_Dataset/CellExp_Dataset
 %% 1 — Load data
 save_dir = '/home/lododi/git/DeePhysNewPhil';
-% Paths to saved RecordingProcessor .mat files (one per recording)
-proc_paths = full_sorting_path_list + "/MEArecording.mat";
-target_paths = target_sorting_path_list + "/MEArecording.mat";
-
+% Full .mat file paths (one per recording) -- these are files, not
+% directories, so named proc_files/target_files/cortex_files throughout,
+% matching the convention used in the tutorials (proc_paths = directories,
+% proc_files = full RecordingProcessor.mat/MEArecording.mat paths).
+proc_files   = full_sorting_path_list + "/MEArecording.mat";
+target_files = target_sorting_path_list + "/MEArecording.mat";
 
 % Only FeatureStores + Units (waveform/ACG) are needed below, not
 % Connectivity/Bursts/raw SpikeData — FeatureStore.fromProcessorPaths and
@@ -52,18 +54,18 @@ target_paths = target_sorting_path_list + "/MEArecording.mat";
 % feature sidecar instead of the full processor (commonly 10-20x smaller).
 % Legacy MEArecording.mat files without a sidecar fall back to a full load
 % automatically (same result, just without the speedup).
-fs        = FeatureStore.fromProcessorPaths(proc_paths);
-target_fs = FeatureStore.fromProcessorPaths(target_paths);
+fs        = FeatureStore.fromProcessorPaths(proc_files);
+target_fs = FeatureStore.fromProcessorPaths(target_files);
 %%
 cortex_idx        = fs.MetadataTable.Region == "Cortex" & fs.MetadataTable.Concentration ~= Inf;
-cortex_proc_paths = proc_paths(cortex_idx);
-cortex_paths      = [cortex_proc_paths(:); target_paths(:)];  % (:) avoids row/column mismatch
-cortex_fs         = FeatureStore.fromProcessorPaths(cortex_paths);
+cortex_proc_files = proc_files(cortex_idx);
+cortex_files      = [cortex_proc_files(:); target_files(:)];  % (:) avoids row/column mismatch
+cortex_fs         = FeatureStore.fromProcessorPaths(cortex_files);
 
 % Build UnitData array in FeatureStore row order
-ud_cell = cell(1, numel(cortex_paths));
-parfor i = 1:numel(cortex_paths)
-    s = RecordingProcessor.loadForFeatureStore(cortex_paths(i));
+ud_cell = cell(1, numel(cortex_files));
+parfor i = 1:numel(cortex_files)
+    s = RecordingProcessor.loadForFeatureStore(cortex_files(i));
     ud_cell{i} = s.Units;
 end
 ud = [ud_cell{:}];
@@ -141,9 +143,9 @@ ctc = CellTypeClassifier(cortex_fs, ud, params);
 % reliably tell (e.g. Lag=1/BinSize=0.01 and Lag=2/BinSize=0.02 both give
 % 201 bins). The recompute only touches each recording's lightweight
 % feature sidecar, not the full RecordingProcessor.mat.
-%   ctc.attachProcPaths(cortex_paths)        % auto-recompute on mismatch (default)
-%   ctc.attachProcPaths(cortex_paths, false)  % detect + warn only, no disk writes
-ctc.attachProcPaths(cortex_paths);
+%   ctc.attachProcPaths(cortex_files)        % auto-recompute on mismatch (default)
+%   ctc.attachProcPaths(cortex_files, false)  % detect + warn only, no disk writes
+ctc.attachProcPaths(cortex_files);
 
 %% 3 — Identify inhibitory candidates
 

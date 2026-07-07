@@ -69,10 +69,10 @@ disp(proc_loaded.Status);
 
 load_root  = root_path;
 load_logic = {'2*', '*0*', 'Network', 'w*', 'sorter_output', 'qc_output'};
-load_paths = generate_sorting_path_list(load_root, load_logic);
+proc_paths = generate_sorting_path_list(load_root, load_logic);   % directories
 
-proc_paths = fullfile(string(load_paths), 'RecordingProcessor.mat');
-proc_paths = proc_paths(isfile(proc_paths));
+proc_files = fullfile(string(proc_paths), 'RecordingProcessor.mat');
+proc_files = proc_files(isfile(proc_files));                      % full .mat paths
 
 % Only building a FeatureStore below, so skip loading full processors
 % (Connectivity/Bursts/raw SpikeData) entirely — see §15.
@@ -84,7 +84,7 @@ proc_paths = proc_paths(isfile(proc_paths));
 % instead of the full processor — typically an order of magnitude less
 % data moved, and no chunking needed even for hundreds of recordings.
 % Need the actual processors afterward instead? Use
-% RecordingProcessor.loadMany(proc_paths) + FeatureStore.fromProcessors(procs).
+% RecordingProcessor.loadMany(proc_files) + FeatureStore.fromProcessors(procs).
 
 fs = FeatureStore.fromProcessorPaths(proc_files);
 
@@ -97,8 +97,7 @@ fprintf('MetadataTable : %d rows × %d cols\n', height(fs.MetadataTable),  width
 %
 % Load only feature tables without heavy SpikeData/Connectivity:
 
-[uft, nft, status] = RecordingProcessor.loadFeatureTables( ...
-    fullfile(string(load_paths{1}), 'RecordingProcessor.mat'));
+[uft, nft, status] = RecordingProcessor.loadFeatureTables(proc_files(1));
 fprintf('Loaded feature tables: %d unit rows, %d network cols\n', height(uft), width(nft));
 
 %% 17  Inspect table structure

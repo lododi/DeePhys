@@ -53,10 +53,6 @@ path_logic = {'C*', '*', 'w*', 'sorter_output', 'segment_*', 'test*','*'};
 sorting_paths = generate_sorting_path_list(root_path, path_logic);
 fprintf('Discovered %d sorting paths\n', numel(sorting_paths));
 
-proc_paths = fullfile(string(sorting_paths), 'RecordingProcessor.mat');
-proc_paths = proc_paths(isfile(proc_paths));
-
-
 save_dir = '/net/bs-filesvr02/export/group/hierlemann/intermediate_data/Maxtwo/phornauer/Chemogenetics/';
 fs_file = fullfile(save_dir, 'FeatureStore.mat');
 

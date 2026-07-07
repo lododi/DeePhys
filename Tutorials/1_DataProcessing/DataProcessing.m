@@ -218,14 +218,14 @@ disp(proc_loaded.Status);
 root_path  = "/net/bs-filesvr02/export/group/hierlemann/intermediate_data/Maxtwo/phornauer";
 path_logic = {'C*', '*', 'w*', 'sorter_output', 'segment_*', 'test*','*'};
 
-sorting_paths = generate_sorting_path_list(root_path, path_logic);
-fprintf('Discovered %d sorting paths\n', numel(sorting_paths));
+proc_paths = generate_sorting_path_list(root_path, path_logic);
+fprintf('Discovered %d sorting paths\n', numel(proc_paths));
 
 % Build .mat paths from the discovered directories
-proc_paths = fullfile(string(sorting_paths), 'RecordingProcessor.mat');
-proc_paths = proc_paths(isfile(proc_paths));   % keep only existing files
-
-procs = RecordingProcessor.loadMany(proc_paths);
+proc_files = fullfile(string(proc_paths), 'RecordingProcessor.mat');
+proc_files = proc_files(isfile(proc_files));   % keep only existing files
+%%
+procs = RecordingProcessor.loadMany(proc_files);
 fprintf('Batch-loaded %d processors.\n', numel(procs));
 
 %% 15  Assemble FeatureStore from multiple processors
@@ -236,13 +236,13 @@ fprintf('Batch-loaded %d processors.\n', numel(procs));
 %
 % This is the right call when you already have procs loaded for other
 % reasons (as here). If building the FeatureStore is your ONLY goal, skip
-% §14's loadMany entirely and call FeatureStore.fromProcessorPaths(proc_paths)
+% §14's loadMany entirely and call FeatureStore.fromProcessorPaths(proc_files)
 % instead — it reads each recording's lightweight feature sidecar rather
 % than the full processor (Connectivity/Bursts/raw SpikeData are commonly
 % 10-20x the size of what's actually used here), typically an order of
 % magnitude faster:
 %
-%   fs = FeatureStore.fromProcessorPaths(proc_paths);
+%   fs = FeatureStore.fromProcessorPaths(proc_files);
 
 fs = FeatureStore.fromProcessors(procs);
 
@@ -280,7 +280,7 @@ fprintf('Converted and loaded %d processors.\n', numel(procs_converted));
 
 %% 17  Chunked FeatureStore assembly for large datasets
 %
-% Prefer FeatureStore.fromProcessorPaths(proc_paths) (§15) — it never loads
+% Prefer FeatureStore.fromProcessorPaths(proc_files) (§15) — it never loads
 % full processors in the first place, so there's usually nothing to chunk.
 % Reach for the chunked version below only when you specifically need actual
 % RecordingProcessor objects in memory afterward (not just the FeatureStore),
@@ -293,7 +293,7 @@ fprintf('Converted and loaded %d processors.\n', numel(procs_converted));
 % Adjust chunk_size based on available RAM (lower = less memory, slower).
 
 chunk_size = 20;
-fs_large = FeatureStore.fromProcessorsChunked(proc_paths, save_dir, chunk_size);
+fs_large = FeatureStore.fromProcessorsChunked(proc_files, save_dir, chunk_size);
 fs_large.save(fullfile(save_dir, 'FeatureStore.mat'));
 
 %% 18  Partial loading (RAM-friendly)

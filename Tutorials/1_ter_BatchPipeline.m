@@ -100,11 +100,11 @@ end
 todo_idx = find(~jobs.AlreadyProcessed);
 n = numel(todo_idx);
 
-proc_paths = strings(height(jobs), 1);
+proc_files = strings(height(jobs), 1);   % full RecordingProcessor.mat paths
 status     = strings(height(jobs), 1);
 
 % Pre-fill already-processed entries so they flow straight into Section 6
-proc_paths(jobs.AlreadyProcessed) = jobs.proc_file(jobs.AlreadyProcessed);
+proc_files(jobs.AlreadyProcessed) = jobs.proc_file(jobs.AlreadyProcessed);
 status(jobs.AlreadyProcessed) = "skipped (already processed)";
 
 %% 5  Run batch (parfor) — only recordings not already processed
@@ -157,11 +157,11 @@ parfor i = 1:n
     end
 end
 
-proc_paths(todo_idx) = todo_proc_paths;
+proc_files(todo_idx) = todo_proc_paths;
 status(todo_idx) = todo_status;
 
 jobs.Status = status;
-jobs.proc_file = proc_paths;   % keep proc_file authoritative post-run
+jobs.proc_file = proc_files;   % keep proc_file authoritative post-run
 writetable(removevars(jobs, intersect(jobs.Properties.VariableNames, {'AlreadyProcessed'})), ...
     fullfile(out_dir, 'batch_run_log.csv'));
 disp(jobs(:, ["ks_path","ChipWellKey","RecordingDate","Status"]));
@@ -171,7 +171,7 @@ disp(jobs(:, ["ks_path","ChipWellKey","RecordingDate","Status"]));
 good  = jobs.Status == "ok" | jobs.Status == "skipped (already processed)";
 fprintf('Assembling FeatureStore from %d/%d recordings...\n', sum(good), height(jobs));
 
-fs = FeatureStore.fromProcessorPaths(proc_paths(good));
+fs = FeatureStore.fromProcessorPaths(proc_files(good));
 fs.save(fullfile(out_dir, 'FeatureStore_batch.mat'));
 
 fprintf('FeatureStore: %d units, %d recordings.\n', height(fs.UnitTable), height(fs.RecordingTable));
