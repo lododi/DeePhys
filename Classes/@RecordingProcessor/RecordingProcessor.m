@@ -40,6 +40,13 @@ classdef RecordingProcessor < handle
         Bursts              struct      % Burst detection results
         CellTypeLabels      double      % (1 x N_units) 1=exc, 2=inh, NaN=unclassified
         Status              struct      % Tracks which analyses have been run
+        ParentACGBinSize    double      % Actual BinSize used for Parent_ACG* columns, [] if none computed
+        ParentACGLag        double      % Actual Lag used for Parent_ACG* columns, [] if none computed
+        %   Bin count alone (numel of Parent_ACG* columns) does not uniquely
+        %   identify (BinSize, Lag) -- e.g. (Lag=1, BinSize=0.01) and
+        %   (Lag=2, BinSize=0.02) both give 201 bins. These record what was
+        %   actually used, so a later Harmonization mismatch can be detected
+        %   reliably instead of inferred from bin count.
     end
 
     % =====================================================================
@@ -330,6 +337,8 @@ classdef RecordingProcessor < handle
             else
                 proc.UnitFeatureTable = parent_tbl;
             end
+            proc.ParentACGBinSize = p.BinSize;
+            proc.ParentACGLag     = p.Lag;
             proc.Status.ParentFeatures = "done";
         end
 
@@ -783,9 +792,12 @@ classdef RecordingProcessor < handle
             CellTypeLabels        = proc.CellTypeLabels;      %#ok<PROP>
             Parameters            = proc.Parameters;          %#ok<PROP>
             Status                = proc.Status;              %#ok<PROP>
+            ParentACGBinSize      = proc.ParentACGBinSize;    %#ok<PROP>
+            ParentACGLag          = proc.ParentACGLag;        %#ok<PROP>
             builtin('save', file_path, 'SpikeDataStruct', 'UnitsStructArray', ...
                 'UnitFeatureTable', 'NetworkFeatureTable', ...
-                'Connectivity', 'Bursts', 'CellTypeLabels', 'Parameters', 'Status');
+                'Connectivity', 'Bursts', 'CellTypeLabels', 'Parameters', 'Status', ...
+                'ParentACGBinSize', 'ParentACGLag');
 
             proc.saveFeatureSidecar(file_path);
         end
@@ -794,9 +806,11 @@ classdef RecordingProcessor < handle
         % SAVEFEATURESIDECAR  Write a lightweight companion .mat alongside
         %   file_path containing everything FeatureStore assembly and
         %   cell-type classification's raw-unit access need — RecordingID,
-        %   Metadata, Units, UnitFeatureTable, NetworkFeatureTable, Status —
-        %   without Connectivity, Bursts, or the raw SpikeData spike
-        %   times/templates/waveforms. Connectivity alone is commonly 10-20x
+        %   Metadata, Units, UnitFeatureTable, NetworkFeatureTable, Status,
+        %   plus ParentPath/SamplingRate/ParentACGBinSize/ParentACGLag (small
+        %   scalars needed to validate and, if needed, recompute Parent_ACG*
+        %   without touching Connectivity, Bursts, or the raw SpikeData spike
+        %   times/templates/waveforms). Connectivity alone is commonly 10-20x
         %   the size of everything else combined, so this sidecar is a
         %   fraction of the full file's size.
         %
@@ -809,13 +823,22 @@ classdef RecordingProcessor < handle
             end
             RecordingID         = proc.SpikeData.RecordingID;    %#ok<PROP>
             Metadata            = proc.SpikeData.Metadata;       %#ok<PROP>
+            ParentPath          = proc.SpikeData.ParentPath;     %#ok<PROP>
+            SamplingRate        = proc.SpikeData.SamplingRate;   %#ok<PROP>
             UnitsStructArray    = arrayfun(@RecordingProcessor.valueToStruct, proc.Units); %#ok<PROP>
             UnitFeatureTable    = proc.UnitFeatureTable;    %#ok<PROP>
             NetworkFeatureTable = proc.NetworkFeatureTable; %#ok<PROP>
             Status              = proc.Status;              %#ok<PROP>
+            ParentACGBinSize    = proc.ParentACGBinSize;    %#ok<PROP>
+            ParentACGLag        = proc.ParentACGLag;        %#ok<PROP>
+            % A full save() writes both files from the same in-memory proc, so
+            % they necessarily agree -- clears any staleness flag left over from
+            % a prior recomputeParentACGLight sidecar-only update.
+            SidecarAheadOfMain  = false; %#ok<NASGU>
             sidecar_path = RecordingProcessor.sidecarPath(file_path);
-            builtin('save', sidecar_path, 'RecordingID', 'Metadata', 'UnitsStructArray', ...
-                'UnitFeatureTable', 'NetworkFeatureTable', 'Status');
+            builtin('save', sidecar_path, 'RecordingID', 'Metadata', 'ParentPath', 'SamplingRate', ...
+                'UnitsStructArray', 'UnitFeatureTable', 'NetworkFeatureTable', 'Status', ...
+                'ParentACGBinSize', 'ParentACGLag', 'SidecarAheadOfMain');
         end
 
     end
@@ -862,6 +885,12 @@ classdef RecordingProcessor < handle
             if isfield(s, 'CellTypeLabels')
                 proc.CellTypeLabels = s.CellTypeLabels;
             end
+            if isfield(s, 'ParentACGBinSize')
+                proc.ParentACGBinSize = s.ParentACGBinSize;
+            end
+            if isfield(s, 'ParentACGLag')
+                proc.ParentACGLag = s.ParentACGLag;
+            end
             if isfield(s, 'Parameters')
                 proc.Parameters = s.Parameters;
             else
@@ -889,6 +918,28 @@ classdef RecordingProcessor < handle
                 proc.Status = RecordingProcessor.upgradeLegacyStatus(proc.Status);
             else
                 proc.Status = RecordingProcessor.emptyStatus();
+            end
+
+            % Warn if recomputeParentACGLight updated the sidecar's Parent_ACG*
+            % after this main file was last saved -- proc here still has the
+            % OLDER data. Saving proc now (without re-running
+            % computeParentFeatures first) would silently overwrite that fix.
+            sidecar_path = RecordingProcessor.sidecarPath(file_path);
+            if isfile(sidecar_path)
+                try
+                    flag = load(sidecar_path, 'SidecarAheadOfMain');
+                    if isfield(flag, 'SidecarAheadOfMain') && flag.SidecarAheadOfMain
+                        warning('RecordingProcessor:sidecarAheadOfMain', ...
+                            ['The feature sidecar for %s was updated (e.g. via ' ...
+                             'recomputeParentACGLight) after this main file was last saved -- ' ...
+                             'this loaded object''s Parent_ACG*/ParentACGBinSize/ParentACGLag ' ...
+                             'reflect the OLDER data. Calling proc.save() now will overwrite the ' ...
+                             'sidecar''s newer fix unless you re-run computeParentFeatures first.'], ...
+                            file_path);
+                    end
+                catch
+                    % Sidecar predates this flag -- nothing to warn about.
+                end
             end
         end
 
@@ -1185,7 +1236,8 @@ classdef RecordingProcessor < handle
         function s = loadForFeatureStore(file_path)
         % LOADFORFEATURESTORE  Load only what FeatureStore assembly and
         %   cell-type classification's raw-unit access need — RecordingID,
-        %   Metadata, Units, UnitFeatureTable, NetworkFeatureTable, Status —
+        %   Metadata, Units, UnitFeatureTable, NetworkFeatureTable, Status,
+        %   ParentPath, SamplingRate, ParentACGBinSize, ParentACGLag —
         %   skipping Connectivity, Bursts, and raw SpikeData (typically the
         %   large majority of a RecordingProcessor.mat's size).
         %
@@ -1196,14 +1248,17 @@ classdef RecordingProcessor < handle
         %   migrate files saved before this existed.
         %
         %   Returns a struct with fields: RecordingID, Metadata, Units
-        %   (UnitData array), UnitFeatureTable, NetworkFeatureTable, Status.
+        %   (UnitData array), UnitFeatureTable, NetworkFeatureTable, Status,
+        %   ParentPath, SamplingRate, ParentACGBinSize, ParentACGLag (the last
+        %   four are [] for sidecars/files written before these were tracked).
             arguments
                 file_path (1,1) string
             end
             sidecar_path = RecordingProcessor.sidecarPath(file_path);
             if isfile(sidecar_path)
                 raw = load(sidecar_path, 'RecordingID', 'Metadata', 'UnitsStructArray', ...
-                    'UnitFeatureTable', 'NetworkFeatureTable', 'Status');
+                    'UnitFeatureTable', 'NetworkFeatureTable', 'Status', ...
+                    'ParentPath', 'SamplingRate', 'ParentACGBinSize', 'ParentACGLag');
                 s.RecordingID = raw.RecordingID;
                 s.Metadata    = raw.Metadata;
                 if ~isempty(raw.UnitsStructArray)
@@ -1214,6 +1269,10 @@ classdef RecordingProcessor < handle
                 s.UnitFeatureTable    = raw.UnitFeatureTable;
                 s.NetworkFeatureTable = raw.NetworkFeatureTable;
                 s.Status              = raw.Status;
+                s.ParentPath          = RecordingProcessor.getFieldOr(raw, 'ParentPath', "");
+                s.SamplingRate        = RecordingProcessor.getFieldOr(raw, 'SamplingRate', []);
+                s.ParentACGBinSize    = RecordingProcessor.getFieldOr(raw, 'ParentACGBinSize', []);
+                s.ParentACGLag        = RecordingProcessor.getFieldOr(raw, 'ParentACGLag', []);
             else
                 warning('RecordingProcessor:noSidecar', ...
                     ['No feature sidecar found for %s — falling back to a full load ' ...
@@ -1227,7 +1286,116 @@ classdef RecordingProcessor < handle
                 s.UnitFeatureTable    = proc.UnitFeatureTable;
                 s.NetworkFeatureTable = proc.NetworkFeatureTable;
                 s.Status              = proc.Status;
+                s.ParentPath          = proc.SpikeData.ParentPath;
+                s.SamplingRate        = proc.SpikeData.SamplingRate;
+                s.ParentACGBinSize    = proc.ParentACGBinSize;
+                s.ParentACGLag        = proc.ParentACGLag;
             end
+        end
+
+        function ok = recomputeParentACGLight(file_path, acg_params)
+        % RECOMPUTEPARENTACGLIGHT  Recompute and re-save Parent_ACG* using only
+        %   the feature sidecar — no full RecordingProcessor.load()/save().
+        %
+        %   ok = RecordingProcessor.recomputeParentACGLight(file_path, acg_params)
+        %   acg_params: struct with BinSize/Lag fields (defaults match
+        %   computeParentFeatures: BinSize=0.0005, Lag=0.1).
+        %
+        %   Requires a sidecar to already exist (backfillFeatureSidecars for
+        %   files that predate it) — ParentPath, SamplingRate, Units,
+        %   UnitFeatureTable, Status all come from there, so Connectivity,
+        %   Bursts, and raw SpikeData are never touched.
+        %
+        %   Updates ONLY the sidecar. The main RecordingProcessor.mat's own
+        %   UnitFeatureTable copy of Parent_ACG* is left as-is until the next
+        %   full proc.save() — an intentional tradeoff to avoid the full
+        %   load/save this method exists to skip. Anything reading via the
+        %   sidecar (loadForFeatureStore, FeatureStore.fromProcessorPaths,
+        %   CellTypeClassifier) sees the corrected data immediately regardless.
+            arguments
+                file_path  (1,1) string
+                acg_params struct = struct()
+            end
+            ok = false;
+            sidecar_path = RecordingProcessor.sidecarPath(file_path);
+            if ~isfile(sidecar_path)
+                warning('RecordingProcessor:noSidecar', ...
+                    ['No feature sidecar for %s — run RecordingProcessor.backfillFeatureSidecars ' ...
+                     'first, or use the full computeParentFeatures + save path.'], file_path);
+                return
+            end
+
+            s = RecordingProcessor.loadForFeatureStore(file_path);
+            if s.ParentPath == "" || ~isfolder(s.ParentPath)
+                warning('RecordingProcessor:noParent', ...
+                    'No valid parent path in sidecar for %s — cannot recompute Parent_ACG.', file_path);
+                return
+            end
+            if isempty(s.Units)
+                return
+            end
+
+            defaults.BinSize = 0.0005;
+            defaults.Lag     = 0.1;
+            p = parseStructParameters(defaults, acg_params);
+
+            try
+                acg_map = ParentSpikeLoader.loadFullACGs(s.ParentPath, s.SamplingRate, p);
+            catch ME
+                warning('RecordingProcessor:parentACGFailed', ...
+                    'Parent ACG computation failed for %s: %s', s.ParentPath, ME.message);
+                return
+            end
+            map_keys = keys(acg_map);
+            if isempty(map_keys)
+                return
+            end
+            n_bins  = numel(acg_map(map_keys{1}));
+            n_units = numel(s.Units);
+            full_acgs = NaN(n_bins, n_units);
+            for u = 1:n_units
+                tid_key = num2str(s.Units(u).TemplateID);
+                if acg_map.isKey(tid_key)
+                    full_acgs(:, u) = acg_map(tid_key);
+                end
+            end
+            acg_names  = "Parent_ACG" + (1:n_bins);
+            parent_tbl = array2table(full_acgs', 'VariableNames', acg_names);
+
+            uft = s.UnitFeatureTable;
+            if ~isempty(uft)
+                existing = string(uft.Properties.VariableNames);
+                stale    = startsWith(existing, "Parent_");
+                if any(stale)
+                    uft(:, stale) = [];
+                end
+                uft = [uft, parent_tbl];
+            else
+                uft = parent_tbl;
+            end
+
+            status = s.Status;
+            status.ParentFeatures = "done";
+
+            RecordingID         = s.RecordingID;    %#ok<PROP,NASGU>
+            Metadata            = s.Metadata;       %#ok<PROP,NASGU>
+            ParentPath          = s.ParentPath;     %#ok<PROP,NASGU>
+            SamplingRate        = s.SamplingRate;   %#ok<PROP,NASGU>
+            UnitsStructArray    = arrayfun(@RecordingProcessor.valueToStruct, s.Units); %#ok<NASGU>
+            UnitFeatureTable    = uft;               %#ok<NASGU>
+            NetworkFeatureTable = s.NetworkFeatureTable; %#ok<PROP,NASGU>
+            Status              = status;            %#ok<NASGU>
+            ParentACGBinSize    = p.BinSize;          %#ok<NASGU>
+            ParentACGLag        = p.Lag;              %#ok<NASGU>
+            % Only the sidecar was updated -- flag that the main .mat's own
+            % UnitFeatureTable copy of Parent_ACG* is now stale. load() checks
+            % this and warns, so a later proc.save() doesn't silently overwrite
+            % this fix with the main file's older in-memory data.
+            SidecarAheadOfMain  = true; %#ok<NASGU>
+            builtin('save', sidecar_path, 'RecordingID', 'Metadata', 'ParentPath', 'SamplingRate', ...
+                'UnitsStructArray', 'UnitFeatureTable', 'NetworkFeatureTable', 'Status', ...
+                'ParentACGBinSize', 'ParentACGLag', 'SidecarAheadOfMain');
+            ok = true;
         end
 
         function backfillFeatureSidecars(file_paths)
@@ -1292,6 +1460,18 @@ classdef RecordingProcessor < handle
             s.Connectivity     = "pending";
             s.CellTypeFeatures = "pending";
             s.SpatialFeatures  = "pending";
+        end
+
+        function v = getFieldOr(s, field, default_val)
+        % GETFIELDOR  s.(field) if present, else default_val.
+        %   load(file, 'A', 'B') silently omits fields not present in the
+        %   file rather than erroring — used to read sidecars/files written
+        %   before a given field existed without breaking on old data.
+            if isfield(s, field)
+                v = s.(field);
+            else
+                v = default_val;
+            end
         end
 
         function proc = appendFeatures(proc, nw_tbl, unit_tbl)

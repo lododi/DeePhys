@@ -86,7 +86,7 @@ proc_paths = proc_paths(isfile(proc_paths));
 % Need the actual processors afterward instead? Use
 % RecordingProcessor.loadMany(proc_paths) + FeatureStore.fromProcessors(procs).
 
-fs = FeatureStore.fromProcessorPaths(proc_paths);
+fs = FeatureStore.fromProcessorPaths(proc_files);
 
 % Three tables
 fprintf('UnitTable     : %d rows × %d cols\n', height(fs.UnitTable),      width(fs.UnitTable));

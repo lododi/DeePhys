@@ -111,7 +111,7 @@ params = CellTypeClassifier.returnDefaultParams();
 %params = struct();
 
 % ── Harmonization ────────────────────────────────────────────────────────
-params.Harmonization.ACGBinSize = 0.0001;
+params.Harmonization.ACGBinSize = 0.001;
 params.Harmonization.ACGLag     = 0.1;
 params.Harmonization.ACGSource  = 'FullACG';
 
@@ -189,6 +189,16 @@ params.CultureKeys = ["ChipID", "PlatingDate", "RecordingDate"];
 % Construct classifier
 ctc = CellTypeClassifier(fs, ud, params);
 
+% Enables detecting (and by default, automatically recomputing + re-saving)
+% Parent_ACG* whose actual stored (BinSize, Lag) doesn't match
+% params.Harmonization (ACGBinSize/ACGLag) above -- bin count alone can't
+% reliably tell (e.g. Lag=1/BinSize=0.01 and Lag=2/BinSize=0.02 both give
+% 201 bins). The recompute only touches each recording's lightweight
+% feature sidecar, not the full RecordingProcessor.mat.
+%   ctc.attachProcPaths(proc_files)        % auto-recompute on mismatch (default)
+%   ctc.attachProcPaths(proc_files, false)  % detect + warn only, no disk writes
+ctc.attachProcPaths(proc_files);
+
 %% 3  Identify responsive units (drug-response)
 %
 % Bootstrap permutation test: compares pre-stimulus vs post-stimulus firing
@@ -209,7 +219,7 @@ fprintf('Inhibitory candidates: %d / %d total units (%.1f%%)\n', ...
 ctc.generateTrainLabels();
 
 tl = ctc.TrainLabels;
-fprintf('Train set: %d excitatory, %d inhibitory (Q=%.3f)\n', ...
+fprintf('Train set: %d excitatory, %d inhibi3tory (Q=%.3f)\n', ...
     sum(tl.sorted_y_train == 1), sum(tl.sorted_y_train == 2), tl.Q_modularity);
 
 if tl.use_community_path

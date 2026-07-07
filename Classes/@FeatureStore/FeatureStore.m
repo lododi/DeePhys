@@ -208,8 +208,16 @@ classdef FeatureStore < handle
                     unit_ids = string({s.Units.UnitID})';
                     meta_row = FeatureStore.metadataStructToRow(s.Metadata);
                     meta_rep = repmat(meta_row, height(uft), 1);
+                    % ParentACGBinSize/Lag: the actual params Parent_ACG* columns were
+                    % computed with (NaN if unknown/none) -- lets CellTypeClassifier
+                    % validate against Harmonization without a per-recording reload.
+                    % Bin count alone can't distinguish e.g. (Lag=1,BinSize=0.01) from
+                    % (Lag=2,BinSize=0.02) -- both give 201 bins.
+                    pacg_bs  = FeatureStore.nanIfEmpty(s.ParentACGBinSize);
+                    pacg_lag = FeatureStore.nanIfEmpty(s.ParentACGLag);
                     id_tbl   = table(unit_ids, repmat(string(rec_id), height(uft), 1), ...
-                        'VariableNames', {'UnitID','RecordingID'});
+                        repmat(pacg_bs, height(uft), 1), repmat(pacg_lag, height(uft), 1), ...
+                        'VariableNames', {'UnitID','RecordingID','ParentACGBinSize','ParentACGLag'});
                     unit_tables{i} = [id_tbl, meta_rep, uft];
                 end
 
@@ -863,6 +871,16 @@ classdef FeatureStore < handle
     end
 
     methods (Static, Access = private)
+
+        function v = nanIfEmpty(x)
+            % NANIFEMPTY  Scalar NaN in place of [], so it can be repmat'd into
+            % a table column (table columns need a concrete value per row).
+            if isempty(x)
+                v = NaN;
+            else
+                v = x;
+            end
+        end
 
         function tf = isParentGroup(col_name, parent_groups)
             % ISPARENTGROUP  True if col_name belongs to one of the requested parent groups.

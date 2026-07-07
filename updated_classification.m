@@ -135,6 +135,16 @@ params.CultureKeys = ["ChipID", "PlatingDate", "RecordingDate"];
 
 ctc = CellTypeClassifier(cortex_fs, ud, params);
 
+% Enables detecting (and by default, automatically recomputing + re-saving)
+% Parent_ACG* whose actual stored (BinSize, Lag) doesn't match
+% params.Harmonization (ACGBinSize/ACGLag) above -- bin count alone can't
+% reliably tell (e.g. Lag=1/BinSize=0.01 and Lag=2/BinSize=0.02 both give
+% 201 bins). The recompute only touches each recording's lightweight
+% feature sidecar, not the full RecordingProcessor.mat.
+%   ctc.attachProcPaths(cortex_paths)        % auto-recompute on mismatch (default)
+%   ctc.attachProcPaths(cortex_paths, false)  % detect + warn only, no disk writes
+ctc.attachProcPaths(cortex_paths);
+
 %% 3 — Identify inhibitory candidates
 
 % metadata_filter restricts which cultures contribute candidates

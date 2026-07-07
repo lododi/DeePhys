@@ -70,6 +70,15 @@ classdef CellTypeClassifier < handle
         %   .unique_to_rep(1 x n_unique) representative row in UnitDataArray
         %   .subset_mask  (1 x n_unique) training-culture logical mask
         %   .n_unique, .n_units_full
+        ProcPaths               containers.Map  % RecordingID (string, char key) -> RecordingProcessor.mat path.
+        %   Optional — set via attachProcPaths(proc_paths). When present AND
+        %   AutoRecomputeParentACG is true, resolveACG auto-recomputes and
+        %   re-saves Parent_ACG* for any recording whose stored (BinSize, Lag)
+        %   doesn't match Harmonization, instead of only warning.
+        AutoRecomputeParentACG  (1,1) logical = true
+        %   Set via attachProcPaths(proc_paths, false) to only warn on a
+        %   Parent_ACG mismatch (list affected recordings) without touching
+        %   disk — e.g. to review before committing to a recompute.
     end
 
     % Kept for backward compatibility (populated by fromLegacyGroup)
@@ -103,6 +112,47 @@ classdef CellTypeClassifier < handle
             ctc.UnitDataArray = unit_data;
             ctc.Parameters    = parseStructParameters(ctc.returnDefaultParams(), parameters);
             ctc.validateParameters();
+        end
+
+        function attachProcPaths(ctc, proc_paths, auto_recompute)
+        % ATTACHPROCPATHS  Enable Parent_ACG mismatch detection, and optionally
+        %   automatic recompute-and-save, against Harmonization.
+        %
+        %   ctc.attachProcPaths(proc_paths)          % auto-recompute on (default)
+        %   ctc.attachProcPaths(proc_paths, false)    % detect + warn only, no disk writes
+        %
+        % Without this attached at all, resolveACG only warns and falls back to
+        % on-the-fly ACG computation when Parent_ACG* (BinSize, Lag) doesn't
+        % match Harmonization — the mismatch has to be fixed manually and
+        % re-persists every run.
+        %
+        % With this attached and auto_recompute=true (default), resolveACG
+        % additionally recomputes and re-saves Parent_ACG at the correct
+        % resolution for the affected recordings via
+        % RecordingProcessor.recomputeParentACGLight (sidecar-only, no full
+        % RecordingProcessor load/save), so subsequent runs use the
+        % precomputed (faster) path directly.
+        %
+        % With auto_recompute=false, resolveACG still lists which recordings
+        % mismatch but does not touch disk — use this to review before
+        % committing to a recompute, then call
+        % ctc.AutoRecomputeParentACG = true (or re-attach with true) once ready.
+        %
+        % Cheap to call: RecordingID is a hash of each recording's InputPath
+        % (the folder containing RecordingProcessor.mat), so no files are
+        % loaded to build this map — just proc_paths themselves.
+            arguments
+                ctc            CellTypeClassifier
+                proc_paths     string
+                auto_recompute (1,1) logical = true
+            end
+            ctc.AutoRecomputeParentACG = auto_recompute;
+            ctc.ProcPaths = containers.Map('KeyType', 'char', 'ValueType', 'char');
+            for i = 1:numel(proc_paths)
+                input_path = fileparts(char(proc_paths(i)));
+                rec_id     = paramHash(struct('InputPath', input_path));
+                ctc.ProcPaths(char(rec_id)) = char(proc_paths(i));
+            end
         end
 
         function s = saveobj(ctc)
@@ -311,19 +361,99 @@ classdef CellTypeClassifier < handle
                 parent_acg_cols = all_cols(startsWith(all_cols, "Parent_ACG") | ...
                     startsWith(all_cols, "FullACG"));
                 if ~isempty(parent_acg_cols)
+                    % Parent_ACG* was computed by RecordingProcessor.computeParentFeatures
+                    % using whatever BinSize/Lag were passed there — independent of, and
+                    % not automatically kept in sync with, this Harmonization config.
+                    n_bins = numel(parent_acg_cols);
+
                     % Map unit_data order to FeatureStore row order by (UnitID, RecordingID)
                     % compound key. UnitID alone is ambiguous in dose-response data where
                     % the same unit appears in multiple recordings.
-                    ud_keys   = string({unit_data.UnitID})' + "|" + string({unit_data.RecordingID})';
-                    fs_keys   = string(ut.UnitID) + "|" + string(ut.RecordingID);
-                    [~, loc]  = ismember(ud_keys, fs_keys);
-                    valid     = loc > 0;
-                    n_bins    = numel(parent_acg_cols);
-                    acg       = zeros(n_bins, numel(unit_data));
-                    if any(valid)
-                        acg(:, valid) = ut{loc(valid), parent_acg_cols}';
+                    ud_keys  = string({unit_data.UnitID})' + "|" + string({unit_data.RecordingID})';
+                    fs_keys  = string(ut.UnitID) + "|" + string(ut.RecordingID);
+                    [~, loc] = ismember(ud_keys, fs_keys);
+                    valid    = loc > 0;
+
+                    % Validate against actual stored (BinSize, Lag), not bin count --
+                    % count alone is ambiguous (e.g. Lag=1/BinSize=0.01 and
+                    % Lag=2/BinSize=0.02 both give 201 bins). Older FeatureStores built
+                    % via FeatureStore.fromProcessors (not fromProcessorPaths) won't have
+                    % these columns; fall back to the count heuristic for those.
+                    has_param_cols = all(ismember(["ParentACGBinSize","ParentACGLag"], all_cols));
+                    match = false(numel(unit_data), 1);
+                    if has_param_cols
+                        stored_bs  = nan(numel(unit_data), 1);
+                        stored_lag = nan(numel(unit_data), 1);
+                        stored_bs(valid)  = ut.ParentACGBinSize(loc(valid));
+                        stored_lag(valid) = ut.ParentACGLag(loc(valid));
+                        match(valid) = abs(stored_bs(valid) - ph.ACGBinSize) < 1e-9 & ...
+                                       abs(stored_lag(valid) - ph.ACGLag)     < 1e-9;
+                    else
+                        n_bins_expected = round(2 * ph.ACGLag / ph.ACGBinSize) + 1;
+                        match(valid) = (n_bins == n_bins_expected);
                     end
-                    return
+
+                    if all(match(valid))
+                        acg = zeros(n_bins, numel(unit_data));
+                        if any(valid)
+                            acg(:, valid) = ut{loc(valid), parent_acg_cols}';
+                        end
+                        return
+                    end
+
+                    mismatched_rec_ids = unique(string({unit_data(valid & ~match).RecordingID}));
+                    if ~isempty(ctc.ProcPaths) && ctc.AutoRecomputeParentACG
+                        % Auto-fix: recompute and re-save Parent_ACG at the correct
+                        % resolution for every mismatched recording, so the precomputed
+                        % (faster) path is used automatically next time this
+                        % FeatureStore is rebuilt. This run still falls through to
+                        % on-the-fly computation below — patching the in-memory
+                        % UnitTable's Parent_ACG* columns (different bin count) isn't
+                        % worth the complexity for a one-off run.
+                        acg_params = struct('BinSize', ph.ACGBinSize, 'Lag', ph.ACGLag);
+                        n_fixed    = 0;
+                        for r = 1:numel(mismatched_rec_ids)
+                            key = char(mismatched_rec_ids(r));
+                            if isKey(ctc.ProcPaths, key)
+                                proc_file = ctc.ProcPaths(key);
+                                try
+                                    if RecordingProcessor.recomputeParentACGLight(proc_file, acg_params)
+                                        n_fixed = n_fixed + 1;
+                                    end
+                                catch ME
+                                    warning('CellTypeClassifier:parentACGRecomputeFailed', ...
+                                        'Could not recompute Parent_ACG for %s: %s', proc_file, ME.message);
+                                end
+                            end
+                        end
+                        warning('CellTypeClassifier:parentACGMismatch', ...
+                            ['Parent_ACG* for %d recording(s) doesn''t match Harmonization ' ...
+                             '(ACGBinSize=%.4g, ACGLag=%.4g) — recomputed and re-saved %d/%d of ' ...
+                             'them at the correct resolution. Falling back to on-the-fly ' ...
+                             'computation for this run only.'], ...
+                            numel(mismatched_rec_ids), ph.ACGBinSize, ph.ACGLag, n_fixed, numel(mismatched_rec_ids));
+                    else
+                        if ~isempty(ctc.ProcPaths)
+                            % Attached but explicitly opted out via attachProcPaths(..., false).
+                            howto = sprintf(['Auto-recompute is currently disabled ' ...
+                                '(ctc.AutoRecomputeParentACG = false). Set ctc.AutoRecomputeParentACG ' ...
+                                '= true, or recompute this one manually:\n' ...
+                                '  RecordingProcessor.recomputeParentACGLight(file_path, ' ...
+                                'struct(''BinSize'', %.4g, ''Lag'', %.4g));'], ph.ACGBinSize, ph.ACGLag);
+                        else
+                            howto = sprintf(['Call ctc.attachProcPaths(proc_paths) to have this ' ...
+                                'recomputed and re-saved automatically next time, or fix manually:\n' ...
+                                '  proc.Status.ParentFeatures = "pending";\n' ...
+                                '  proc.computeParentFeatures(struct(''BinSize'', %.4g, ''Lag'', %.4g));\n' ...
+                                '  proc.save(file_path);'], ph.ACGBinSize, ph.ACGLag);
+                        end
+                        warning('CellTypeClassifier:parentACGMismatch', ...
+                            ['Parent_ACG* for %d recording(s) doesn''t match Harmonization ' ...
+                             '(ACGBinSize=%.4g, ACGLag=%.4g). Falling back to on-the-fly ' ...
+                             'computation for this run. %s'], ...
+                            numel(mismatched_rec_ids), ph.ACGBinSize, ph.ACGLag, howto);
+                    end
+                    % Fall through to parent-spike-train / segment recomputation below.
                 end
                 % FeatureStore has no FullACG columns — try reading FullACG
                 % directly from the UnitData structs (legacy MEArecording path).
@@ -534,6 +664,7 @@ classdef CellTypeClassifier < handle
             end
             ud  = [ud_cell{:}];
             ctc = CellTypeClassifier(fs, ud, parameters);
+            ctc.attachProcPaths(good_paths);
         end
 
         function ctc = fromLegacyGroup(rg, parameters)
