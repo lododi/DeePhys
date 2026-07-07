@@ -90,6 +90,12 @@ classdef Regressor
                     continue
                 end
 
+                % Reseed per fold — see Classifier.classify for why this matters
+                % once NHyper > 0 (Bayesian search is stochastic and otherwise
+                % inherits RNG state left over from the previous fold).
+                if ~isempty(opts.Seed)
+                    rng(opts.Seed + k);
+                end
                 [mdl, train_r2] = MLPipeline.createRegressor(X_train, Y_train, opts.Algorithm, opts.NHyper);
                 Y_pred = predict(mdl, X_test);
 

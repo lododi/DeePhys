@@ -15,6 +15,7 @@ classdef MLPipeline
             params.RF.Surrogate = 'on';
             params.RF.Reproducible = true;
             params.RF.Prior = 'empirical';  % 'uniform' gives equal weight to each class regardless of frequency
+            params.RF.HyperKFold = [];  % [] = fitcensemble/fitrensemble default (5) for the Bayesian search's internal CV
 
             params.UMAP.NNeighbors = 100;
             params.UMAP.NNeighborsCulture = 10;
@@ -47,6 +48,15 @@ classdef MLPipeline
             if N_hyper > 0
                 opt_opts = struct('AcquisitionFunctionName', 'expected-improvement-plus', ...
                     'MaxObjectiveEvaluations', N_hyper, 'ShowPlots', false, 'Verbose', 0);
+                % The Bayesian search scores each candidate via its own internal
+                % K-fold CV on X_train — a plain random split, NOT grouped by
+                % CVGroups/recording like the outer CV in Classifier.classify. That
+                % can let a unit's siblings straddle the inner train/validation
+                % split. Defaults to fitcensemble/fitcsvm's own default (5-fold)
+                % unless params.RF.HyperKFold overrides it (e.g. to reduce cost).
+                if isfield(params, 'RF') && isfield(params.RF, 'HyperKFold') && ~isempty(params.RF.HyperKFold)
+                    opt_opts.Kfold = params.RF.HyperKFold;
+                end
                 switch alg
                     case 'svm'
                         clf = fitcsvm(X_train, Y_train, 'Prior', params.RF.Prior, ...
@@ -61,13 +71,35 @@ classdef MLPipeline
                             'OptimizeHyperparameters', 'all', ...
                             'HyperparameterOptimizationOptions', opt_opts);
                     case 'rf'
-                        hyperparams = {'NumLearningCycles', 'MinLeafSize', 'MaxNumSplits', 'SplitCriterion', 'NumVariablesToSample'};
-                        t = templateTree('Reproducible', true);
+                        % NumLearningCycles is fixed (not searched): tree count should
+                        % be an explicit memory/time choice (see Classifier opts.NumTrees),
+                        % not something bayesopt spends its budget exploring. Surrogate is
+                        % likewise fixed so opts.Surrogate keeps working when NHyper > 0 —
+                        % previously both were silently ignored here, defeating the RF
+                        % memory knobs added for large Unit-level classification.
+                        hyperparams = {'MinLeafSize', 'MaxNumSplits', 'SplitCriterion', 'NumVariablesToSample'};
+                        t = templateTree('Reproducible', true, 'Surrogate', params.RF.Surrogate);
                         clf = fitcensemble(X_train, Y_train, 'Method', 'Bag', 'Prior', params.RF.Prior, ...
+                            'NumLearningCycles', params.RF.NumCycles, ...
                             'OptimizeHyperparameters', hyperparams, 'Learners', t, ...
                             'HyperparameterOptimizationOptions', opt_opts);
                 end
-                train_acc = 1 - clf.HyperparameterOptimizationResults.MinObjective;  % MinObjective is error rate → convert to accuracy
+                % MinObjective is error rate → convert to accuracy. Guard against a
+                % degenerate/aborted search (empty results table) rather than crashing —
+                % this has been observed to happen on some folds while others succeed.
+                if isprop(clf, 'HyperparameterOptimizationResults') && ...
+                        ~isempty(clf.HyperparameterOptimizationResults) && ...
+                        ~isempty(clf.HyperparameterOptimizationResults.MinObjective)
+                    train_acc = 1 - clf.HyperparameterOptimizationResults.MinObjective;
+                else
+                    warning('MLPipeline:optimizationResultsMissing', ...
+                        'Hyperparameter optimization produced no usable results table for this fold — falling back to OOB/resubstitution accuracy.');
+                    if alg == "rf"
+                        train_acc = 1 - oobLoss(clf, 'LossFun', 'classiferror');
+                    else
+                        train_acc = 1 - resubLoss(clf, 'LossFun', 'classiferror');
+                    end
+                end
             else
                 switch alg
                     case 'svm'
@@ -135,10 +167,13 @@ classdef MLPipeline
                             'OptimizeHyperparameters', 'all', ...
                             'HyperparameterOptimizationOptions', opt_opts);
                     case 'rf'
-                        hyperparams = {'NumLearningCycles', 'MinLeafSize', 'MaxNumSplits', 'NumVariablesToSample'};
-                        t = templateTree('Reproducible', true);
+                        % NumLearningCycles/Surrogate fixed, not searched — see the
+                        % matching fix in createClassifier's 'rf' branch for why.
+                        hyperparams = {'MinLeafSize', 'MaxNumSplits', 'NumVariablesToSample'};
+                        t = templateTree('Reproducible', true, 'Surrogate', params.RF.Surrogate);
                         mdl = fitrensemble(X_train, Y_train, 'Method', 'Bag', ...
                             'Learners', t, ...
+                            'NumLearningCycles', params.RF.NumCycles, ...
                             'OptimizeHyperparameters', hyperparams, ...
                             'HyperparameterOptimizationOptions', opt_opts);
                     otherwise

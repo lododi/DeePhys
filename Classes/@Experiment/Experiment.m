@@ -248,6 +248,8 @@ classdef Experiment < handle
         %       magnitude more rows than Recording/Culture level; if it runs out of
         %       memory, try opts.ComputeImportance = false and/or opts.NumTrees = 100
         %       and/or opts.Surrogate = 'off' before reducing FeatureGroups.
+        %   .HyperKFold — inner CV fold count for opts.NHyper > 0 (Bayesian
+        %       hyperparameter search), see Classifier.classify.
             arguments
                 exp                 Experiment
                 level               (1,1) string = "Recording"
@@ -508,6 +510,7 @@ classdef Experiment < handle
             if ~isfield(opts, 'NumTrees'),         opts.NumTrees = [];                 end
             if ~isfield(opts, 'Surrogate'),        opts.Surrogate = [];                end
             if ~isfield(opts, 'ComputeImportance'), opts.ComputeImportance = true;      end
+            if ~isfield(opts, 'HyperKFold'),       opts.HyperKFold = [];               end
         end
 
     end

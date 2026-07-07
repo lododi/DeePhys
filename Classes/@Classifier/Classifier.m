@@ -47,6 +47,11 @@ classdef Classifier
         %                          the single most expensive RF step (re-predicts OOB samples once
         %                          per feature, per tree) — set false to skip it when it's not needed
         %                          or when it's the cause of an out-of-memory failure.
+        %     .HyperKFold        - (NHyper > 0 only) folds for the Bayesian search's internal CV
+        %                          used to score each candidate hyperparameter set (default: MATLAB's
+        %                          own default, 5). That inner CV is a plain random split of X_train,
+        %                          NOT grouped by CVGroups — lower this (e.g. 3) to reduce the nested
+        %                          model-fit cost of hyperparameter search on large Unit-level data.
         %
         % OUTPUTS:
         %   result - (1 x K) ClassificationResult array, one per fold
@@ -110,8 +115,18 @@ classdef Classifier
 
                 clf_params = MLPipeline.returnDefaultParams();
                 clf_params.RF.Prior = opts.Prior;
-                if ~isempty(opts.NumTrees),  clf_params.RF.NumCycles = opts.NumTrees;  end
-                if ~isempty(opts.Surrogate), clf_params.RF.Surrogate = opts.Surrogate; end
+                if ~isempty(opts.NumTrees),   clf_params.RF.NumCycles = opts.NumTrees;   end
+                if ~isempty(opts.Surrogate),  clf_params.RF.Surrogate = opts.Surrogate;  end
+                if ~isempty(opts.HyperKFold), clf_params.RF.HyperKFold = opts.HyperKFold; end
+
+                % Reseed per fold (derived from the base seed) rather than letting
+                % each fold's model training — especially the Bayesian search's
+                % stochastic acquisition function — consume RNG state left over
+                % from the previous fold. Without this, folds are not independently
+                % seeded and behavior can drift or degenerate from fold 2 onward.
+                if ~isempty(opts.Seed)
+                    rng(opts.Seed + k);
+                end
                 [clf, train_acc] = MLPipeline.createClassifier(X_train, Y_train, opts.Algorithm, opts.NHyper, clf_params);
                 [Y_pred, scores] = predict(clf, X_test);
 
@@ -274,6 +289,7 @@ classdef Classifier
             if ~isfield(opts, 'NumTrees'),           opts.NumTrees = [];          end
             if ~isfield(opts, 'Surrogate'),          opts.Surrogate = [];         end
             if ~isfield(opts, 'ComputeImportance'),  opts.ComputeImportance = true; end
+            if ~isfield(opts, 'HyperKFold'),         opts.HyperKFold = [];        end
         end
 
         function checkClassBalance(Y)

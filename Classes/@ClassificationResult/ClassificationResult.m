@@ -100,20 +100,30 @@ classdef ClassificationResult < MLResult
         % SUMMARIZEFOLDS  Compute per-fold and aggregate classification metrics.
         %
         % Returns struct with: per_fold (table), mean_accuracy, std_accuracy, mean_F1.
+        %
+        % A fold whose computeMetrics() errors (e.g. a degenerate model from a
+        % failed hyperparameter search) contributes NaN rather than aborting the
+        % whole summary — one bad fold shouldn't hide the results of the rest.
             n_folds = length(result_array);
-            accs = zeros(n_folds, 1);
-            f1s  = zeros(n_folds, 1);
+            accs = nan(n_folds, 1);
+            f1s  = nan(n_folds, 1);
             for k = 1:n_folds
-                m      = result_array(k).computeMetrics();
-                accs(k) = m.Accuracy;
-                f1s(k)  = m.F1_score;
+                try
+                    m      = result_array(k).computeMetrics();
+                    accs(k) = m.Accuracy;
+                    f1s(k)  = m.F1_score;
+                catch ME
+                    warning('ClassificationResult:foldMetricsFailed', ...
+                        'Fold %d: computeMetrics() failed (%s) — reporting NaN for this fold.', ...
+                        k, ME.message);
+                end
             end
             summary.per_fold      = table((1:n_folds)', accs, f1s, ...
                 'VariableNames', {'Fold', 'Accuracy', 'F1_score'});
-            summary.mean_accuracy = mean(accs);
-            summary.std_accuracy  = std(accs);
-            summary.mean_F1       = mean(f1s);
-            summary.std_F1        = std(f1s);
+            summary.mean_accuracy = mean(accs, 'omitnan');
+            summary.std_accuracy  = std(accs, 'omitnan');
+            summary.mean_F1       = mean(f1s, 'omitnan');
+            summary.std_F1        = std(f1s, 'omitnan');
         end
 
     end

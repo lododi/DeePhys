@@ -72,21 +72,31 @@ classdef RegressionResult < MLResult
         % SUMMARIZEFOLDS  Compute per-fold and aggregate regression metrics.
         %
         % Returns struct with: per_fold (table), mean_MSE, mean_R2, mean_Correlation.
+        %
+        % A fold whose computeMetrics() errors (e.g. a degenerate model from a
+        % failed hyperparameter search, or corr() on non-finite predictions)
+        % contributes NaN rather than aborting the whole summary.
             n_folds = length(result_array);
-            mses = zeros(n_folds, 1);
-            r2s  = zeros(n_folds, 1);
-            cors = zeros(n_folds, 1);
+            mses = nan(n_folds, 1);
+            r2s  = nan(n_folds, 1);
+            cors = nan(n_folds, 1);
             for k = 1:n_folds
-                m      = result_array(k).computeMetrics();
-                mses(k) = m.MSE;
-                r2s(k)  = m.R2;
-                cors(k) = m.Correlation;
+                try
+                    m      = result_array(k).computeMetrics();
+                    mses(k) = m.MSE;
+                    r2s(k)  = m.R2;
+                    cors(k) = m.Correlation;
+                catch ME
+                    warning('RegressionResult:foldMetricsFailed', ...
+                        'Fold %d: computeMetrics() failed (%s) — reporting NaN for this fold.', ...
+                        k, ME.message);
+                end
             end
             summary.per_fold         = table((1:n_folds)', mses, r2s, cors, ...
                 'VariableNames', {'Fold', 'MSE', 'R2', 'Correlation'});
-            summary.mean_MSE         = mean(mses);
-            summary.mean_R2          = mean(r2s);
-            summary.mean_Correlation = mean(cors);
+            summary.mean_MSE         = mean(mses, 'omitnan');
+            summary.mean_R2          = mean(r2s, 'omitnan');
+            summary.mean_Correlation = mean(cors, 'omitnan');
         end
 
     end
