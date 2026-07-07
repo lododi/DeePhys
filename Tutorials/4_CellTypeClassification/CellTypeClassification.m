@@ -447,3 +447,45 @@ fprintf('ACG      : %d x %d\n', size(acg_m,1), size(acg_m,2));
 
 % stability = ctc.assessStability('NRuns', 5);
 % fprintf('Stability: ARI = %.3f +/- %.3f\n', stability.meanARI, stability.stdARI);
+
+%% 16  Parent_ACG maintenance
+%
+% ctc.attachProcPaths (§1) already handles the common case automatically:
+% if a recording's Parent_ACG* doesn't match params.Harmonization
+% (ACGBinSize/ACGLag), resolveACG detects it and — since
+% AutoRecomputeParentACG defaults to true — recomputes and re-saves it via
+% RecordingProcessor.recomputeParentACGLight, without you doing anything.
+%
+% Reach for the tools below when you want that recompute to happen
+% proactively (e.g. right after changing Harmonization params, rather than
+% waiting for the next classification run to trigger it), or when you're
+% cleaning up after a light recompute:
+%
+%   RecordingProcessor.recomputeParentACGLight(file_path, acg_params)
+%     Sidecar-only, fast (no full RecordingProcessor load). Leaves the main
+%     RecordingProcessor.mat's own copy of Parent_ACG* stale — flagged via
+%     SidecarAheadOfMain, which RecordingProcessor.load() warns about.
+%
+%   RecordingProcessor.recomputeParentACGFull(file_path, acg_params)
+%     Full load + computeParentFeatures + save. Slower (also touches
+%     Connectivity/Bursts/raw SpikeData), but the main file and sidecar
+%     never drift apart — nothing to sync later.
+%
+%   RecordingProcessor.syncMainFile(file_path) / syncMainFiles(file_paths)
+%     For files already fixed via recomputeParentACGLight: reads the
+%     already-correct ParentACGBinSize/Lag straight from the sidecar (no
+%     need to know/pass them) and brings the main file back in sync.
+%     syncMainFiles loops serially (not parfor) so sibling recordings
+%     sharing a parent reuse ParentSpikeLoader's cache.
+
+acg_params = struct('BinSize', params.Harmonization.ACGBinSize, 'Lag', params.Harmonization.ACGLag);
+
+% Proactively recompute everything to match the Harmonization params above,
+% keeping both files in sync the whole time (fine for a modest recording count):
+% for i = 1:numel(proc_files)
+%     RecordingProcessor.recomputeParentACGFull(proc_files(i), acg_params);
+% end
+
+% Or clean up main files left stale by an earlier recomputeParentACGLight run
+% (e.g. from ctc.attachProcPaths' auto-fix, or a bulk migration script):
+% n_synced = RecordingProcessor.syncMainFiles(proc_files);
