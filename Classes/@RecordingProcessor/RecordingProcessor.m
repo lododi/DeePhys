@@ -926,9 +926,14 @@ classdef RecordingProcessor < handle
             % computeParentFeatures first) would silently overwrite that fix.
             sidecar_path = RecordingProcessor.sidecarPath(file_path);
             if isfile(sidecar_path)
-                try
+                % whos('-file', ...) reads only the variable directory, not the
+                % data -- and unlike load(file, 'VarName'), never warns when a
+                % requested name isn't present (which older sidecars, written
+                % before this flag existed, legitimately won't have).
+                var_info = whos('-file', sidecar_path);
+                if ismember('SidecarAheadOfMain', {var_info.name})
                     flag = load(sidecar_path, 'SidecarAheadOfMain');
-                    if isfield(flag, 'SidecarAheadOfMain') && flag.SidecarAheadOfMain
+                    if flag.SidecarAheadOfMain
                         warning('RecordingProcessor:sidecarAheadOfMain', ...
                             ['The feature sidecar for %s was updated (e.g. via ' ...
                              'recomputeParentACGLight) after this main file was last saved -- ' ...
@@ -937,8 +942,6 @@ classdef RecordingProcessor < handle
                              'sidecar''s newer fix unless you re-run computeParentFeatures first.'], ...
                             file_path);
                     end
-                catch
-                    % Sidecar predates this flag -- nothing to warn about.
                 end
             end
         end
@@ -1256,9 +1259,16 @@ classdef RecordingProcessor < handle
             end
             sidecar_path = RecordingProcessor.sidecarPath(file_path);
             if isfile(sidecar_path)
-                raw = load(sidecar_path, 'RecordingID', 'Metadata', 'UnitsStructArray', ...
-                    'UnitFeatureTable', 'NetworkFeatureTable', 'Status', ...
-                    'ParentPath', 'SamplingRate', 'ParentACGBinSize', 'ParentACGLag');
+                % Only request variables actually present -- load(file, 'VarName')
+                % warns (doesn't error, but is noisy) for any name not in the file,
+                % which older sidecars (written before ParentPath/SamplingRate/
+                % ParentACGBinSize/ParentACGLag existed) legitimately lack.
+                wanted    = {'RecordingID','Metadata','UnitsStructArray','UnitFeatureTable', ...
+                             'NetworkFeatureTable','Status','ParentPath','SamplingRate', ...
+                             'ParentACGBinSize','ParentACGLag'};
+                var_info  = whos('-file', sidecar_path);
+                to_load   = intersect(wanted, {var_info.name}, 'stable');
+                raw = load(sidecar_path, to_load{:});
                 s.RecordingID = raw.RecordingID;
                 s.Metadata    = raw.Metadata;
                 if ~isempty(raw.UnitsStructArray)
