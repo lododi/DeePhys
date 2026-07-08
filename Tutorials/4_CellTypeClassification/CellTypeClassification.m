@@ -457,7 +457,26 @@ fprintf('ACG      : %d x %d\n', size(acg_m,1), size(acg_m,2));
 % stability = ctc.assessStability('NRuns', 5);
 % fprintf('Stability: ARI = %.3f +/- %.3f\n', stability.meanARI, stability.stdARI);
 
-%% 16  Parent_ACG maintenance
+%% 16  Activity/waveform confound check
+%
+% diagnosticClassification's "Mean ACG by class" / "Mean waveform by class"
+% tiles can show a large ACG baseline gap between predicted classes with
+% almost no corresponding waveform-shape difference — a red flag that the
+% classifier may be separating units by firing rate/regularity rather than
+% true cell identity (identifyResponsiveUnits' ground truth is itself
+% firing-rate-based, so this is a real circularity risk).
+%
+% This compares curated, literature-validated E/I features (FiringRate, CV2,
+% RevisedLocalVariation, FanoFactor, T2Pdelay, HalfWidth, Asymmetry,
+% RegularityFrequency/Fit — columns the classifier's own feature matrix never
+% sees) between predicted classes. Effect sizes comparable to or larger than
+% the classifier's own top raw-feature Cohen's d (shown as a reference line)
+% are evidence of the confound; small, non-significant effect sizes support
+% the classifier capturing genuine, independent cell-type information.
+
+% ctc.diagnosticActivityConfound();
+
+%% 17  Parent_ACG maintenance
 %
 % ctc.attachProcPaths (§1) already handles the common case automatically:
 % if a recording's Parent_ACG* doesn't match params.Harmonization

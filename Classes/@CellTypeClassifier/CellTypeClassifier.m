@@ -912,6 +912,9 @@ classdef CellTypeClassifier < handle
         % Declared here; implemented in diagnosticClassification.m
         diagnosticClassification(ctc)
 
+        % Declared here; implemented in diagnosticActivityConfound.m
+        diagnosticActivityConfound(ctc)
+
         % Declared here; implemented in diagnosticOptimization.m
         diagnosticOptimization(ctc, results)
 
