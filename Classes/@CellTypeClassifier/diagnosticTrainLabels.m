@@ -356,27 +356,28 @@ try
         [sorted_frac, sort_ord] = sort(comm_resp_frac, 'descend');
         is_inh_sorted = ismember(sort_ord, inh_comm_ids);
 
+        has_qvals = isfield(tl_struct, 'community_qvals') && ...
+            numel(tl_struct.community_qvals) == n_comm;
+
         hold on;
         for ci = 1:n_comm
             col = C_GREY;
             if is_inh_sorted(ci); col = C_INH; end
             barh(ci, sorted_frac(ci), 'FaceColor', col, 'EdgeColor', 'none', ...
                 'FaceAlpha', 0.8);
-            text(sorted_frac(ci) + 0.005, ci, ...
-                sprintf('C%d', sort_ord(ci)), ...
+            label_str = sprintf('C%d', sort_ord(ci));
+            if has_qvals
+                label_str = sprintf('%s (q=%.3f)', label_str, tl_struct.community_qvals(sort_ord(ci)));
+            end
+            text(sorted_frac(ci) + 0.005, ci, label_str, ...
                 'VerticalAlignment', 'middle', 'FontSize', 7);
         end
         hold off;
 
-        % Threshold line at max_frac × RelThresh
-        max_frac  = max(comm_resp_frac);
-        thresh_frac = max_frac * ctc.Parameters.Community.InhibitoryCommunityRelThresh;
-        xline(thresh_frac, '--r', 'LineWidth', 1.5);
-
         yticks([]);
         xlabel('Responsive fraction');
-        title(sprintf('Community resp. fractions (Q=%.2f, %d inh)', ...
-            tl_struct.Q_modularity, numel(inh_comm_ids)));
+        title(sprintf('Community resp. fractions (Q=%.2f, %d inh, FDR q<%.3f)', ...
+            tl_struct.Q_modularity, numel(inh_comm_ids), ctc.Parameters.Community.CommunityFDRLevel));
         box off;
     else
         % ── Fallback: CE distance distribution ───────────────────────────────

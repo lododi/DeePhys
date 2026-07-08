@@ -79,7 +79,7 @@ else
     comm_diagnostics = [];
     if odm == "community"
         det = detectCommunityOutliers(X_feat, responsive_local, subset_responsive, ...
-            subset_global_idx, reduction, size(X_all, 1), n_neighbors, resp_unique, ...
+            subset_global_idx, reduction, size(X_all, 1), n_neighbors, ...
             ctc.Parameters.Community, ctc.UMAP, ctc.Parameters.RNGSeed);
         if ~det.success
             comm_diagnostics = det;   % preserve Louvain results even on fallback
@@ -91,9 +91,10 @@ else
         det = selectIforestCE(X_feat, responsive_local, subset_responsive, ...
             subset_global_idx, reduction, p_outlr);
         if ~isempty(comm_diagnostics)
-            det.community_ids = comm_diagnostics.community_ids;
-            det.inh_comm_ids  = comm_diagnostics.inh_comm_ids;
-            det.Q_modularity  = comm_diagnostics.Q_modularity;
+            det.community_ids   = comm_diagnostics.community_ids;
+            det.inh_comm_ids    = comm_diagnostics.inh_comm_ids;
+            det.community_qvals = comm_diagnostics.community_qvals;
+            det.Q_modularity    = comm_diagnostics.Q_modularity;
         end
     elseif odm == "none"
         det = selectNoCE(X_feat, responsive_local, subset_responsive, p_outlr);

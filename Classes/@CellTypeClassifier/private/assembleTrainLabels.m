@@ -45,6 +45,7 @@ labels.resp_community_outlier_mask = det.resp_community_outlier_mask;
 labels.resp_purity_outlier_mask    = det.resp_purity_outlier_mask;
 labels.community_ids               = det.community_ids;
 labels.inh_comm_ids                = det.inh_comm_ids;
+labels.community_qvals             = det.community_qvals;
 labels.Q_modularity                = det.Q_modularity;
 labels.use_community_path          = det.use_community_path;
 labels.ce_outlier_mask             = det.ce_outlier_mask;

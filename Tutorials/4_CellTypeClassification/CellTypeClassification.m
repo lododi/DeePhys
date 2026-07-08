@@ -110,6 +110,9 @@ params = CellTypeClassifier.returnDefaultParams();
 params.Harmonization.ACGBinSize = 0.001;
 params.Harmonization.ACGLag     = 0.1;
 params.Harmonization.ACGSource  = 'FullACG';
+params.Harmonization.WaveformEdgeMode = "zero";
+params.Harmonization.WaveformPreTrough  = 0.5;   % ms before trough
+params.Harmonization.WaveformPostTrough = 1.0;   % ms after trough  (was 2)
 
 % ── Bootstrap firing-rate test ───────────────────────────────────────────
 %
@@ -119,7 +122,7 @@ params.Harmonization.ACGSource  = 'FullACG';
 %     Falls back to 'two_window' if fewer than MinRecordings are available.
 params.Bootstrap.GroundTruthMethod = 'full_curve';
 params.Bootstrap.Alpha          = 0.0001;
-params.Bootstrap.NIter          = 1000;
+params.Bootstrap.NIter          = 100;
 params.Bootstrap.Direction      = 'increase';
 params.Bootstrap.PreCutout  = [0, 1200];
 params.Bootstrap.PostCutout = [6000, 7200];
@@ -141,8 +144,7 @@ params.UMAP.WaveformWeight  = 1.0;
 
 % ── Louvain community detection ─────────────────────────────────────────
 params.Community.LouvainResolution            = 1.0;
-params.Community.InhibitoryCommunityRelThresh = 0.3;
-params.Community.EnrichmentFactor             = 1;
+params.Community.CommunityFDRLevel            = 0.05;
 params.Community.PuritySigmaThreshold         = 2.5;
 params.Community.CommunityFallbackThreshold   = 0.2;
 params.Community.LouvainRestarts              = 1;
@@ -151,7 +153,7 @@ params.Community.LouvainRestarts              = 1;
 %   "graph" (default): label propagation on the UMAP NxN graph.
 %   "knn": distance-weighted kNN in feature space (sanity check / small data).
 params.Classification.Method               = "graph";
-params.Classification.GraphMaxIter         = 100;
+params.Classification.GraphMaxIter         = 1000;
 params.Classification.GraphConvergenceTol  = 1e-4;
 
 % ── Ensemble (on by default) ────────────────────────────────────────────
@@ -242,16 +244,23 @@ n_inh  = sum(labels == 2, 'omitnan');
 n_nan  = sum(isnan(labels));
 fprintf('Excitatory: %d  Inhibitory: %d  Unclassified: %d\n', n_exc, n_inh, n_nan);
 
+
+%%
+ctc.generateTrainLabels();   % check if it still says "reusing existing embedding"
+% If so, or to be safe regardless:
+ctc.Reduction.Unsupervised = [];   % clear the cache
+ctc.generateTrainLabels();         % now forces a fresh UMAP fit
+
 %% 6  Bayesian optimization of UMAP + community parameters (optional)
 %
 % Run this when default parameters produce unsatisfying community structure.
 
-% ctc_opt = CellTypeClassifier(fs, ud, params);
-% ctc_opt.identifyResponsiveUnits();
-% results = ctc_opt.optimizeUnsupervisedUMAP();
-% fprintf('Phase 1 BayOpt: best coherence = %.3f\n', -results.bestObjective);
-% ctc_opt.generateTrainLabels();
-% ctc_opt.classify();
+ctc_opt = CellTypeClassifier(fs, ud, params);
+ctc_opt.identifyResponsiveUnits();
+results = ctc_opt.optimizeUnsupervisedUMAP();
+fprintf('Phase 1 BayOpt: best coherence = %.3f\n', -results.bestObjective);
+ctc_opt.generateTrainLabels();
+ctc_opt.classify();
 
 %% 7  Validate training labels
 %

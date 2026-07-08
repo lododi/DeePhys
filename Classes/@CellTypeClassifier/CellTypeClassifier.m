@@ -810,22 +810,22 @@ classdef CellTypeClassifier < handle
             % Used in generateTrainLabels for community-based CE selection.
             %   LouvainResolution: Louvain gamma parameter (1 = standard modularity;
             %     higher = finer communities). Set by optimizeUnsupervisedUMAP or manually.
-            %   InhibitoryCommunityRelThresh: community is considered inhibitory if its
-            %     responsive fraction >= this × max responsive fraction across communities.
+            %   CommunityFDRLevel: a community is inhibitory if its responsive-unit
+            %     enrichment (one-sided hypergeometric test vs. the population responsive
+            %     rate) is significant at this Benjamini-Hochberg FDR level. Scales with
+            %     community size, unlike a fixed relative/absolute fraction threshold,
+            %     which lets small, noisy communities clear an arbitrary bar by chance.
             %   CommunityFallbackThreshold: if fewer than this fraction of responsive units
             %     land in inhibitory communities, fall back to distance-based CE selection.
             %   MinCEPerCommunity: minimum k-medoids selected from each CE community.
             %   PuritySigmaThreshold: robust z-score cutoff for graph purity outlier removal.
             %   LouvainRestarts: number of Louvain restarts; best-Q run is used.
-            %   EnrichmentFactor: community must have >= EnrichmentFactor × p_resp responsive
-            %     fraction to qualify as inhibitory (chance-anchored absolute floor).
             defaultParams.Community.LouvainResolution             = 1.0;
-            defaultParams.Community.InhibitoryCommunityRelThresh  = 0.3;
+            defaultParams.Community.CommunityFDRLevel             = 0.05;
             defaultParams.Community.CommunityFallbackThreshold    = 0.5;
             defaultParams.Community.MinCEPerCommunity             = 3;
             defaultParams.Community.PuritySigmaThreshold          = 2.5;
             defaultParams.Community.LouvainRestarts               = 5;
-            defaultParams.Community.EnrichmentFactor              = 1.5;
 
             % ── Classification ────────────────────────────────────────────────
             defaultParams.Classification.Method                 = "graph";   % "knn" (feature-space kNN) or "graph" (UMAP graph label propagation)

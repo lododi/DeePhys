@@ -11,8 +11,9 @@ function results = optimizeUnsupervisedUMAP(ctc, opts)
 %     3. Symmetrise umap_ev.graph (NxN fuzzy simplicial set — no kNN re-derivation).
 %     4. Run community_louvain (BCT) with LouvainResolution × LouvainRestarts;
 %        keep run with highest Q.
-%     5. Inhibitory communities: resp_frac >= RelThresh × max_frac AND
-%        resp_frac >= EnrichmentFactor × p_resp (dual criterion).
+%     5. Inhibitory communities: one-sided hypergeometric enrichment test per
+%        community vs. the population responsive rate, Benjamini-Hochberg
+%        FDR-corrected across communities (Community.CommunityFDRLevel).
 %     6. loss = -(fraction of responsive units in inhibitory communities).
 %
 % OPTIMIZED VARIABLES (from Parameters.BayesianOptimization.UnsupOptimizeVars):
@@ -116,7 +117,7 @@ resp_unique    = ismember(unique_ud_ids, resp_uids);   % 1 × n_unique logical
 n_responsive   = sum(resp_unique);
 assert(n_responsive > 0, 'No responsive units found in NormalizedFeatures.');
 
-p_resp = n_responsive / N_all;   % baseline responsive probability (for EnrichmentFactor)
+p_resp = n_responsive / N_all;   % baseline responsive probability (reported below)
 
 if opts.Verbose
     fprintf('Phase 1 BayOpt: %d units, %d responsive (p_resp=%.3f), %d features\n', ...
@@ -250,22 +251,16 @@ function loss = objective(x)
         loss = 1; return   % all restarts failed
     end
 
-    % Identify inhibitory communities (high responsive fraction)
+    % Identify inhibitory communities: hypergeometric enrichment vs. population
+    % responsive rate, BH-FDR corrected across communities.
     n_comm = max(best_M);
-    comm_resp_frac = zeros(1, n_comm);
-    for c = 1:n_comm
-        c_mask = best_M == c;
-        if any(c_mask)
-            comm_resp_frac(c) = sum(resp_unique(c_mask)) / sum(c_mask);
-        end
-    end
-    max_frac = max(comm_resp_frac);
-    if max_frac == 0
+    [inh_comm_ids_ev, comm_resp_frac] = identifyInhibitoryCommunities( ...
+        best_M, resp_unique, p_comm.CommunityFDRLevel);
+    if isempty(comm_resp_frac) || max(comm_resp_frac) == 0
         loss = 1; return
     end
-    inh_by_rel = comm_resp_frac >= max_frac * p_comm.InhibitoryCommunityRelThresh;
-    inh_by_abs = comm_resp_frac >= p_comm.EnrichmentFactor * p_resp;
-    inh_mask   = inh_by_rel & inh_by_abs;
+    inh_mask = false(1, n_comm);
+    inh_mask(inh_comm_ids_ev) = true;
 
     % Community coherence: fraction of responsive units in inhibitory communities
     resp_in_inh = sum(resp_unique & inh_mask(best_M)');

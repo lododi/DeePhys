@@ -117,8 +117,7 @@ params.UMAP.NormalizationVar = 'RecordingID'; %RecordingID / ChipID
 
 % ── Louvain community detection ────────────────────────────────────────────────
 params.Community.LouvainResolution            = 1.0;
-params.Community.InhibitoryCommunityRelThresh = 0.3;
-params.Community.EnrichmentFactor            = 1;
+params.Community.CommunityFDRLevel           = 0.05;
 params.Community.PuritySigmaThreshold        = 2.5;
 params.Community.CommunityFallbackThreshold  = 0.2;
 params.Community.LouvainRestarts             = 1;
