@@ -47,7 +47,7 @@ proc.save(proc_file);
 proc2 = RecordingProcessor.load(proc_file);
 assert(numel(proc2.Units) == numel(proc.Units), 'Unit count mismatch after save/load');
 
-%% A4  Batch migration
+%% A4  Batch migration (in-memory, small batches)
 
 old_mats = {'/path/to/rec1.mat', '/path/to/rec2.mat', '/path/to/rec3.mat'};
 procs(numel(old_mats)) = RecordingProcessor();
@@ -60,6 +60,36 @@ for i = 1:numel(old_mats)
 end
 fprintf('Successfully migrated %d / %d recordings\n', ...
     sum(arrayfun(@(p) ~isempty(p.Units), procs)), numel(procs));
+
+%% A5  Batch migration (disk-backed, saved next to each source recording)
+%
+% For larger batches, use generate_sorting_path_list to discover legacy
+% recordings by path pattern, then RecordingProcessor.convertMany to convert
+% and save them in parallel without holding every processor in memory at
+% once. Passing a save_dir array (one entry per recording, matching
+% mat_paths) saves each result as <save_dir(i)>/RecordingProcessor.mat —
+% i.e. right next to its source .mat file — instead of pooling all outputs
+% under one shared root.
+
+legacy_root  = "/net/bs-filesvr02/export/group/hierlemann/intermediate_data/Maxtwo/phornauer";
+legacy_logic = {'C*', '*', 'w*', 'sorter_output', 'segment_*'};
+legacy_dirs  = generate_sorting_path_list(legacy_root, legacy_logic);
+fprintf('Found %d legacy directories\n', numel(legacy_dirs));
+
+legacy_mats    = fullfile(string(legacy_dirs), 'MEArecording.mat');
+legacy_files   = legacy_mats(isfile(legacy_mats));
+converted_dirs = fullfile(legacy_dirs, "test_proc");
+
+converted_paths = RecordingProcessor.convertMany(legacy_files, converted_dirs(isfile(legacy_mats)));
+
+n_ok     = sum(converted_paths ~= "");
+n_failed = sum(converted_paths == "");
+fprintf('Conversion complete: %d succeeded, %d failed.\n', n_ok, n_failed);
+
+% Load all converted processors
+good = converted_paths(converted_paths ~= "");
+procs_converted = RecordingProcessor.loadMany(good);
+fprintf('Converted and loaded %d processors.\n', numel(procs_converted));
 
 %% ============================================================
 %% B  RecordingGroup migration

@@ -969,14 +969,19 @@ classdef RecordingProcessor < handle
         %   proc_paths = RecordingProcessor.convertMany(mat_paths, save_dir, params)
         %
         %   Converts each legacy .mat file via fromLegacyMat and saves the result
-        %   to save_dir. Uses parfor for parallel conversion. Returns string array
+        %   to disk. Uses parfor for parallel conversion. Returns string array
         %   of saved RecordingProcessor paths (empty string for failed conversions).
         %
-        %   Each processor is saved to <save_dir>/rec_<NNN>/RecordingProcessor.mat
-        %   where NNN is the 1-based index, keeping memory usage bounded.
+        %   save_dir may be either:
+        %     - scalar string: each processor is saved to
+        %       <save_dir>/rec_<NNN>/RecordingProcessor.mat, where NNN is the
+        %       1-based index (pools all outputs under one shared root).
+        %     - string array matching numel(mat_paths): processor i is saved
+        %       to <save_dir(i)>/RecordingProcessor.mat (one destination per
+        %       source recording, e.g. alongside its legacy .mat file).
             arguments
                 mat_paths           % string/cell array of legacy .mat paths
-                save_dir   (1,1) string
+                save_dir   string
                 parameters (1,1) struct = struct()
             end
             if ischar(mat_paths) || isstring(mat_paths)
@@ -985,15 +990,26 @@ classdef RecordingProcessor < handle
             N = numel(mat_paths);
             proc_paths = strings(N, 1);
 
-            if ~isfolder(save_dir)
-                mkdir(save_dir);
+            pooled = isscalar(save_dir);
+            if pooled
+                if ~isfolder(save_dir)
+                    mkdir(save_dir);
+                end
+            elseif numel(save_dir) ~= N
+                error('RecordingProcessor:convertMany', ...
+                    'save_dir must be scalar or match numel(mat_paths) (%d), got %d.', ...
+                    N, numel(save_dir));
             end
 
             fprintf('convertMany: converting %d legacy recordings...\n', N);
             parfor i = 1:N
                 try
                     proc = RecordingProcessor.fromLegacyMat(string(mat_paths{i}), parameters);
-                    out_dir = fullfile(save_dir, sprintf('rec_%03d', i));
+                    if pooled
+                        out_dir = fullfile(save_dir, sprintf('rec_%03d', i));
+                    else
+                        out_dir = save_dir(i);
+                    end
                     if ~isfolder(out_dir)
                         mkdir(out_dir);
                     end
