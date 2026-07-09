@@ -355,6 +355,18 @@ fprintf('ACG      : %d x %d\n', size(acg,1), size(acg,2));
 %   - The Louvain community detection still runs for outlier filtering, but
 %     counterexamples come from explicit labels, not distance-based selection.
 
+%% Find relevant EI MEArecording objects - BT
+root_path = "/net/bs-filesvr02/export/group/hierlemann/intermediate_data/Maxtwo/phornauer/EI_iNeurons/"; %Root path
+path_logic = {'2*','*0*','Network','w*','sorter_output','qc_output'}; %Variable parts
+
+path_list = generate_sorting_path_list(root_path, path_logic);
+fprintf("Generated %i sorting paths\n",length(path_list))
+
+save_dir = '/net/bs-filesvr02/export/group/hierlemann/intermediate_data/Maxtwo/phornauer/EI_iNeurons/';
+fs_file = fullfile(save_dir, 'FeatureStore.mat');
+
+fs_meta = FeatureStore.load(fs_file);
+
 %% 11  Parameter setup (metadata method)
 %
 % The key parameter is Bootstrap.GroundTruthMethod = 'metadata'.
@@ -368,11 +380,11 @@ fprintf('ACG      : %d x %d\n', size(acg,1), size(acg,2));
 % and "inhibitory", set LabelField = "CellType", ResponsiveClassValue =
 % "inhibitory", CounterexampleClassValue = "excitatory".
 
-params_meta = struct();
+params_meta = CellTypeClassifier.returnDefaultParams();
 
 % Same harmonization settings as Part A
-params_meta.Harmonization.ACGBinSize = 0.0005;
-params_meta.Harmonization.ACGLag     = 0.1;
+params_meta.Harmonization.ACGBinSize = 0.002;
+params_meta.Harmonization.ACGLag     = 2;
 params_meta.Harmonization.ACGSource  = 'FullACG';
 
 % Metadata-specific parameters
@@ -506,7 +518,7 @@ fprintf('ACG      : %d x %d\n', size(acg_m,1), size(acg_m,2));
 %     syncMainFiles loops serially (not parfor) so sibling recordings
 %     sharing a parent reuse ParentSpikeLoader's cache.
 
-acg_params = struct('BinSize', params.Harmonization.ACGBinSize, 'Lag', params.Harmonization.ACGLag);
+acg_params = struct('BinSize', params_meta.Harmonization.ACGBinSize, 'Lag', params_meta.Harmonization.ACGLag);
 
 % Proactively recompute everything to match the Harmonization params above,
 % keeping both files in sync the whole time (fine for a modest recording count):

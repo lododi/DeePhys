@@ -258,16 +258,25 @@ fprintf('MetadataTable : %d rows x %d cols\n', height(fs.MetadataTable),  width(
 %
 % Use generate_sorting_path_list to discover legacy recordings by path pattern.
 
+
+legacy_root = "/net/bs-filesvr02/export/group/hierlemann/intermediate_data/Maxtwo/phornauer/EI_iNeurons/"; %Root path
+legacy_logic = {'2*','*0*','Network','w*','sorter_output','qc_output'}; %Variable parts
+
+legacy_dirs = generate_sorting_path_list(legacy_root, legacy_logic);
+fprintf('Found %d legacy directories\n',length(legacy_dirs))
+
+%%
 legacy_root  = "/net/bs-filesvr02/export/group/hierlemann/intermediate_data/Maxtwo/phornauer";
 legacy_logic = {'C*', '*', 'w*', 'sorter_output', 'segment_*'};
 legacy_dirs  = generate_sorting_path_list(legacy_root, legacy_logic);
 fprintf('Found %d legacy directories\n', numel(legacy_dirs));
 
+%%
 legacy_mats   = fullfile(string(legacy_dirs), 'MEArecording.mat');
-legacy_mats   = legacy_mats(isfile(legacy_mats));
-converted_dir = "/path/to/converted";
+legacy_files   = legacy_mats(isfile(legacy_mats));
+converted_dirs = fullfile(legacy_dirs,"test_proc");
 
-converted_paths = RecordingProcessor.convertMany(legacy_mats, converted_dir);
+converted_paths = RecordingProcessor.convertMany(legacy_files, converted_dirs(isfile(legacy_mats)));
 
 n_ok     = sum(converted_paths ~= "");
 n_failed = sum(converted_paths == "");
