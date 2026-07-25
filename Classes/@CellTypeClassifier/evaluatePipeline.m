@@ -4,14 +4,14 @@ function cv_results = evaluatePipeline(ctc, opts)
 % For each fold, one culture is withheld from the UMAP training label set while
 % all units remain embedded in the shared global UMAP (transductive setting).
 % Classification performance is evaluated against drug-response ground truth:
-%   responsive units (ResponsiveUnitIdx) → proxy inhibitory ground truth.
+%   ground-truth label-1 units (GroundTruthLabel1Idx) → proxy inhibitory ground truth.
 %
 % The UMAP embedding is reused across folds by default (ReuseUMAP=true): since
 % global normalization is fitted on all units and the unit set is identical in
 % every fold, the embedding does not change — only the training label subset does.
 %
 % WORKFLOW:
-%   ctc.identifyResponsiveUnits();   % must run first
+%   ctc.identifyGroundTruthUnits();  % must run first
 %   ctc.generateTrainLabels();       % must run once to build initial UMAP
 %   cv = ctc.evaluatePipeline();
 %   % Labels/confidence are left from the last fold — re-run pipeline if needed.
@@ -44,8 +44,8 @@ arguments
     opts.Verbose           (1,1) logical = true
 end
 
-assert(~isempty(ctc.ResponsiveUnitIdx), ...
-    'Run identifyResponsiveUnits() before evaluatePipeline().');
+assert(~isempty(ctc.GroundTruthLabel1Idx), ...
+    'Run identifyGroundTruthUnits() before evaluatePipeline().');
 assert(~isempty(ctc.UMAP) && ~isempty(ctc.UMAP.head), ...
     ['Run generateTrainLabels() at least once before evaluatePipeline() ' ...
      'so the initial UMAP is available for reuse across folds.']);
@@ -66,7 +66,7 @@ else
     held_out_indices = opts.HeldOutCultureIdx;
 end
 
-resp_class_label   = ctc.Parameters.TrainLabels.ResponsiveClassLabel;
+resp_class_label   = ctc.Parameters.TrainLabels.GroundTruthLabel1;
 orig_training_idx  = ctc.Parameters.UMAP.TrainingCultureIdx;
 
 cv_results = struct('fold_idx', {}, 'n_responsive', {}, 'n_labeled_inh', {}, ...
@@ -97,8 +97,8 @@ for fi = 1:n_folds
     % UnitDataArray and UnitTable are guaranteed same length and order.
     held_out_mask = (cult_ids == unique_cultures(c))';  % (1 x N) logical
 
-    % -- Ground truth: responsive (drug-confirmed inh) in held-out culture -----
-    resp_in_held  = ctc.ResponsiveUnitIdx & held_out_mask;
+    % -- Ground truth: label-1 (drug-confirmed inh) in held-out culture --------
+    resp_in_held  = ctc.GroundTruthLabel1Idx & held_out_mask;
     n_responsive  = sum(resp_in_held);
 
     % -- Predicted: units labeled inhibitory in held-out culture ---------------

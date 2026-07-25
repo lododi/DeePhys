@@ -11,7 +11,7 @@ function ext_labels = classifyExternalUnits(ctc, wf_test, acg_test, sr_test, opt
 %
 % INPUTS:
 %   ctc      - CellTypeClassifier with TrainLabels, NormalizationParams, and
-%              UnitDataArray set (run identifyResponsiveUnits + generateTrainLabels first)
+%              UnitDataArray set (run identifyGroundTruthUnits + generateTrainLabels first)
 %   wf_test  - (N_samples × N_ext) raw waveforms at sr_test
 %   acg_test - (N_bins × N_ext)   ACGs computed with the same ACGBinSize /
 %              ACGLag as ctc.Parameters.Harmonization

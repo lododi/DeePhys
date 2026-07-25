@@ -7,7 +7,7 @@
 Unsupervised excitatory/inhibitory (E/I) labelling of sorted units using a transductive graph-based pipeline:
 
 1. Embed all units jointly in a single unsupervised UMAP
-2. Detect inhibitory communities via Louvain clustering (enriched for drug-responsive units)
+2. Detect inhibitory communities via Louvain clustering (enriched for ground-truth label-1 units)
 3. Propagate E/I labels to all units via graph label propagation
 4. Save a trained `CellTypeClassifier`
 
@@ -31,7 +31,7 @@ No separate test-set projection is required — all units are embedded together.
 ```
 All units → UMAP embedding
          → Louvain community detection
-         → Score communities by fraction of drug-responsive units
+         → Score communities by fraction of ground-truth label-1 units
          → Top community = inhibitory ground truth
          → Graph label propagation → E/I label for every unit
 ```
@@ -48,7 +48,7 @@ for i = 1:numel(procs)
 end
 
 ctc = CellTypeClassifier(fs, ud, params);
-ctc.identifyResponsiveUnits();
+ctc.identifyGroundTruthUnits();
 ctc.generateTrainLabels();
 ctc.classifyUnits();
 

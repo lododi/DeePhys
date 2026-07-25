@@ -71,10 +71,16 @@ fprintf('Successfully migrated %d / %d recordings\n', ...
 % i.e. right next to its source .mat file — instead of pooling all outputs
 % under one shared root.
 
-legacy_root  = "/net/bs-filesvr02/export/group/hierlemann/intermediate_data/Maxtwo/phornauer";
-legacy_logic = {'C*', '*', 'w*', 'sorter_output', 'segment_*'};
-legacy_dirs  = generate_sorting_path_list(legacy_root, legacy_logic);
-fprintf('Found %d legacy directories\n', numel(legacy_dirs));
+% legacy_root  = "/net/bs-filesvr02/export/group/hierlemann/intermediate_data/Maxtwo/phornauer";
+% legacy_logic = {'C*', '*', 'w*', 'sorter_output', 'segment_*'};
+% legacy_dirs  = generate_sorting_path_list(legacy_root, legacy_logic);
+% fprintf('Found %d legacy directories\n', numel(legacy_dirs));
+
+legacy_root = "/net/bs-filesvr02/export/group/hierlemann/intermediate_data/Maxtwo/phornauer/EI_iNeurons/"; %Root path
+legacy_logic = {'2*','*0*','Network','w*','sorter_output','qc_output'}; %Variable parts
+
+legacy_dirs = generate_sorting_path_list(legacy_root, legacy_logic);
+fprintf('Found %d legacy directories\n',length(legacy_dirs))
 
 legacy_mats    = fullfile(string(legacy_dirs), 'MEArecording.mat');
 legacy_files   = legacy_mats(isfile(legacy_mats));

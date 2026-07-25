@@ -67,7 +67,7 @@ y_ext   = [ones(1, 25), 2*ones(1, 25)];  % 25 exc + 25 inh
 %   4. Unsupervised UMAP on the combined set.
 %   5. Graph label propagation: external labels are seeds, DeePhys units receive labels.
 %
-% Note: identifyResponsiveUnits / generateTrainLabels are NOT required for this path.
+% Note: identifyGroundTruthUnits / generateTrainLabels are NOT required for this path.
 
 ctc_ext = CellTypeClassifier(fs, ud);
 ctc_ext.classifyUnitsWithExternalTrain(wf_ext, acg_ext, y_ext, sr_ext);
@@ -101,7 +101,7 @@ title('Joint UMAP: DeePhys (circles) + external seeds (triangles)');
 % Requires generateTrainLabels() to have been run so NormalizationParams are set.
 
 ctc_dphy = CellTypeClassifier(fs, ud);
-ctc_dphy.identifyResponsiveUnits();
+ctc_dphy.identifyGroundTruthUnits();
 ctc_dphy.generateTrainLabels();
 
 % External test waveforms/ACGs (different device/sampling rate)

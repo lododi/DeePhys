@@ -6,7 +6,7 @@ function classify(ctc)
 %   true  -> classifyUnitsEnsemble()  (majority vote across multiple seeds)
 %   false -> classifyUnits()          (single-seed classification)
 %
-% Call identifyResponsiveUnits() and generateTrainLabels() before this.
+% Call identifyGroundTruthUnits() and generateTrainLabels() before this.
 %
 % Sets: ctc.UnitLabels, ctc.UnitConfidence, ctc.UnitGraphConnectivity
 

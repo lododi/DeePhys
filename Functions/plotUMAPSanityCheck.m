@@ -5,7 +5,7 @@ function plotUMAPSanityCheck(ctc)
 %
 %   Tile 1 (bootstrap path only):
 %     Unsupervised UMAP — all units in the training subset.
-%     Shows: non-responsive (grey), responsive outliers removed by iforest
+%     Shows: non-label-1 (grey), label-1 outliers removed by iforest
 %     (black x), clean inhibitory candidates (red), excitatory
 %     counterexamples (blue).
 %
@@ -23,7 +23,7 @@ function plotUMAPSanityCheck(ctc)
 % Call after ctc.classifyUnits().
 % Requires ctc.Reduction.Train and ctc.Reduction.Test to be set.
 % Tile 1 additionally requires ctc.Reduction.Unsupervised and
-% ctc.ResponsiveUnitIdx (set by identifyResponsiveUnits / generateTrainLabels).
+% ctc.GroundTruthLabel1Idx (set by identifyGroundTruthUnits / generateTrainLabels).
 
 assert(~isempty(ctc.Reduction.Train), ...
     'ctc.Reduction.Train is empty — run classifyUnits() first.');
@@ -34,7 +34,7 @@ gray      = [0.70, 0.70, 0.70];
 black     = [0.15, 0.15, 0.15];
 colors    = [exc_color; inh_color];
 
-has_unsup = ~isempty(ctc.Reduction.Unsupervised) && ~isempty(ctc.ResponsiveUnitIdx);
+has_unsup = ~isempty(ctc.Reduction.Unsupervised) && ~isempty(ctc.GroundTruthLabel1Idx);
 n_tiles   = 2 + 2 * has_unsup;  % 2 extra tiles when unsupervised data exists
 
 figure('Color', 'w');
@@ -44,7 +44,7 @@ title(tl, 'UMAP sanity check', 'FontWeight', 'normal');
 % --- Tile 1: unsupervised embedding with outlier/candidate detail ---
 if has_unsup
     r    = ctc.Reduction.Unsupervised;
-    resp = ctc.ResponsiveUnitIdx(:)';
+    resp = ctc.GroundTruthLabel1Idx(:)';
     N    = numel(ctc.UnitList);
 
     % Determine which subset was used for UMAP (matches generateTrainLabels logic)
@@ -56,15 +56,15 @@ if has_unsup
     end
 
     % Build per-unit category within the subset
-    % Categories: 1=non-responsive, 2=outlier, 3=inhibitory candidate, 4=excitatory candidate
+    % Categories: 1=non-label-1, 2=outlier, 3=inhibitory candidate, 4=excitatory candidate
     subset_global = find(subset_mask);
-    cat = ones(1, size(r, 1));  % default: non-responsive
+    cat = ones(1, size(r, 1));  % default: non-label-1
 
-    % Responsive candidates (before outlier removal)
+    % Label-1 candidates (before outlier removal)
     subset_responsive = resp(subset_mask);
     cat(subset_responsive) = 3;  % inhibitory candidate (clean)
 
-    % Outliers: responsive candidates removed by isolation forest
+    % Outliers: label-1 candidates removed by isolation forest
     if isfield(ctc.TrainLabels, 'outlier_global_idx')
         outlier_global = ctc.TrainLabels.outlier_global_idx;
         [~, outlier_local] = ismember(outlier_global, subset_global);
@@ -82,11 +82,11 @@ if has_unsup
 
     nexttile; hold on;
 
-    % Layer 1: non-responsive (grey, background)
+    % Layer 1: non-label-1 (grey, background)
     m1 = cat == 1;
     if any(m1)
         scatter(r(m1, 1), r(m1, 2), 6, gray, 'filled', ...
-            'MarkerFaceAlpha', 0.2, 'DisplayName', sprintf('Non-responsive (n=%d)', sum(m1)));
+            'MarkerFaceAlpha', 0.2, 'DisplayName', sprintf('Non-label-1 (n=%d)', sum(m1)));
     end
 
     % Layer 2: excitatory counterexamples (blue)

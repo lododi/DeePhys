@@ -2,7 +2,7 @@ function discardSegmentUnits(ctc)
 % DISCARDSEGMENTUNITS  Remove non-baseline recording segments from the workflow.
 %
 % In dose-response experiments, the same neuron appears in multiple recordings
-% (segments at different doses). identifyResponsiveUnits() uses all segments
+% (segments at different doses). identifyGroundTruthUnits() uses all segments
 % to establish the dose-response curve, but subsequent steps (generateTrainLabels,
 % classifyUnits) should operate on baseline (representative) units only.
 %
@@ -10,10 +10,10 @@ function discardSegmentUnits(ctc)
 %   1. Stores the full UnitDataArray in OriginalUnitDataArray (for FullACG
 %      recomputation from combined parent spike trains)
 %   2. Identifies baseline rows (GroupingVar == GroupingValues)
-%   3. Filters UnitDataArray, FeatureStore.UnitTable, and ResponsiveUnit* arrays
+%   3. Filters UnitDataArray, FeatureStore.UnitTable, and GroundTruthLabel* arrays
 %   4. Clears cached state that depends on array dimensions
 %
-% Call AFTER identifyResponsiveUnits() and BEFORE generateTrainLabels().
+% Call AFTER identifyGroundTruthUnits() and BEFORE generateTrainLabels().
 %
 % NOTE: This modifies FeatureStore.UnitTable in-place (FeatureStore is a handle).
 %       MetadataTable and RecordingTable are preserved unfiltered so that
@@ -78,18 +78,18 @@ end
 ctc.UnitDataArray          = ctc.UnitDataArray(is_baseline);
 ctc.FeatureStore.UnitTable = ut(is_baseline, :);
 
-% -- Filter ResponsiveUnit* arrays (FeatureStore order, same as UnitTable) -----
-if ~isempty(ctc.ResponsiveUnitIdx)
-    ctc.ResponsiveUnitIdx = ctc.ResponsiveUnitIdx(is_baseline);
+% -- Filter GroundTruthLabel* arrays (FeatureStore order, same as UnitTable) --
+if ~isempty(ctc.GroundTruthLabel1Idx)
+    ctc.GroundTruthLabel1Idx = ctc.GroundTruthLabel1Idx(is_baseline);
 end
-if ~isempty(ctc.ResponsiveUnitDirection)
-    ctc.ResponsiveUnitDirection = ctc.ResponsiveUnitDirection(is_baseline);
+if ~isempty(ctc.GroundTruthLabel1Direction)
+    ctc.GroundTruthLabel1Direction = ctc.GroundTruthLabel1Direction(is_baseline);
 end
-if ~isempty(ctc.ResponsiveStrength)
-    ctc.ResponsiveStrength = ctc.ResponsiveStrength(is_baseline);
+if ~isempty(ctc.GroundTruthLabel1Strength)
+    ctc.GroundTruthLabel1Strength = ctc.GroundTruthLabel1Strength(is_baseline);
 end
-if ~isempty(ctc.CounterexampleUnitIdx)
-    ctc.CounterexampleUnitIdx = ctc.CounterexampleUnitIdx(is_baseline);
+if ~isempty(ctc.GroundTruthLabel2Idx)
+    ctc.GroundTruthLabel2Idx = ctc.GroundTruthLabel2Idx(is_baseline);
 end
 
 % -- Clear cached state (must be recomputed on filtered arrays) ----------------

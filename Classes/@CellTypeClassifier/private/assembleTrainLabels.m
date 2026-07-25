@@ -12,7 +12,7 @@ function labels = assembleTrainLabels(det, subset_global_idx, nf, p_train, ...
 %   unit_ids_table    - (N_full x 1) string UnitID from FeatureStore.UnitTable
 %   responsive_strength - (1 x N_full) continuous response strength, or []
 
-resp_label    = p_train.ResponsiveClassLabel;
+resp_label    = p_train.GroundTruthLabel1;
 counter_label = 3 - resp_label;
 
 in_train_id = subset_global_idx(det.clean_resp_local);

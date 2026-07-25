@@ -33,10 +33,10 @@ function results = optimizeHyperparameters(ctc, opts)
 % ACGWeight/WaveformWeight are applied per-evaluation inside each objective call.
 % High-D kNN is precomputed once for trustworthiness (if that metric is used).
 %
-% Requires identifyResponsiveUnits() to have been run first.
+% Requires identifyGroundTruthUnits() to have been run first.
 %
 % USAGE:
-%   ctc.identifyResponsiveUnits();
+%   ctc.identifyGroundTruthUnits();
 %   results = ctc.optimizeHyperparameters();
 %   ctc.Parameters = parseStructParameters(ctc.Parameters, results.bestParams);
 %   ctc.generateTrainLabels();
@@ -64,8 +64,8 @@ warning('CellTypeClassifier:deprecated', ...
      'classifyUnits() propagates labels on the unsupervised ctc.UMAP.graph. ' ...
      'Use optimizeUnsupervisedUMAP() for Phase 1 hyperparameter optimization.']);
 
-assert(~isempty(ctc.ResponsiveUnitIdx), ...
-    'Run identifyResponsiveUnits() before optimizeHyperparameters()');
+assert(~isempty(ctc.GroundTruthLabel1Idx), ...
+    'Run identifyGroundTruthUnits() before optimizeHyperparameters()');
 
 p_bo = ctc.Parameters.BayesianOptimization;
 
@@ -120,11 +120,11 @@ if opts.Verbose
     fprintf('Generating fixed training labels for optimization...\n');
 end
 ref_ctc = CellTypeClassifier(ctc.FeatureStore, ctc.UnitDataArray, ctc.Parameters);
-ref_ctc.ResponsiveUnitIdx       = ctc.ResponsiveUnitIdx;
-ref_ctc.ResponsiveUnitDirection = ctc.ResponsiveUnitDirection;
-ref_ctc.ResponsiveStrength      = ctc.ResponsiveStrength;
-ref_ctc.CounterexampleUnitIdx   = ctc.CounterexampleUnitIdx;
-ref_ctc.OriginalUnitDataArray   = ctc.OriginalUnitDataArray;
+ref_ctc.GroundTruthLabel1Idx       = ctc.GroundTruthLabel1Idx;
+ref_ctc.GroundTruthLabel1Direction = ctc.GroundTruthLabel1Direction;
+ref_ctc.GroundTruthLabel1Strength  = ctc.GroundTruthLabel1Strength;
+ref_ctc.GroundTruthLabel2Idx       = ctc.GroundTruthLabel2Idx;
+ref_ctc.OriginalUnitDataArray      = ctc.OriginalUnitDataArray;
 ref_ctc.generateTrainLabels();
 
 fixed_labels = ref_ctc.TrainLabels;

@@ -1,12 +1,12 @@
-function diagnosticResponsiveUnits(ctc)
-% DIAGNOSTICRESPONSIVEUNITS  2x3 diagnostic figure for identifyResponsiveUnits.
+function diagnosticGroundTruthUnits(ctc)
+% DIAGNOSTICGROUNDTRUTHUNITS  2x3 diagnostic figure for identifyGroundTruthUnits.
 %
 % Tiles:
-%   (a) [1,1] Per-culture responsive fraction bar chart
-%   (b) [1,2] Responsiveness strength distribution (responsive vs non-responsive)
+%   (a) [1,1] Per-culture ground-truth label-1 fraction bar chart
+%   (b) [1,2] Strength distribution (label-1 vs non-label-1)
 %   (c) [1,3] Dose-response curves (FR vs dose per unit)
-%   (d) [2,1] Mean waveform +/- SEM by responsiveness
-%   (e) [2,2] Mean ACG +/- SEM by responsiveness
+%   (d) [2,1] Mean waveform +/- SEM by ground-truth label
+%   (e) [2,2] Mean ACG +/- SEM by ground-truth label
 %   (f) [2,3] Summary text
 %
 % Each tile is guarded by try/catch so a single failure does not abort the figure.
@@ -16,18 +16,18 @@ arguments
     ctc CellTypeClassifier
 end
 
-C_RESP    = [0.8 0.1 0.1];   % responsive: red
-C_NONRESP = [0.5 0.5 0.5];   % non-responsive: grey
+C_RESP    = [0.8 0.1 0.1];   % ground-truth label 1: red
+C_NONRESP = [0.5 0.5 0.5];   % non-label-1: grey
 
 fig = figure('Visible', 'on');
 set(fig, 'Position', [100 100 1200 700]);
 tl = tiledlayout(2, 3, 'TileSpacing', 'compact', 'Padding', 'compact');
-title(tl, 'Responsive units diagnostics', 'FontWeight', 'bold');
+title(tl, 'Ground-truth label-1 diagnostics', 'FontWeight', 'bold');
 
-resp_idx = ctc.ResponsiveUnitIdx;   % logical 1xN (FeatureStore order)
-strength = ctc.ResponsiveStrength;  % double 1xN (FeatureStore order)
+resp_idx = ctc.GroundTruthLabel1Idx;      % logical 1xN (FeatureStore order)
+strength = ctc.GroundTruthLabel1Strength; % double 1xN (FeatureStore order)
 
-% Build a UnitDataArray-order responsive flag for indexing HarmonizedWaveforms/ACGs.
+% Build a UnitDataArray-order label-1 flag for indexing HarmonizedWaveforms/ACGs.
 % These are broadcast from unique units via all_to_unique (UnitDataArray order),
 % so positional indexing with FeatureStore-order resp_idx would be wrong.
 unit_ids_table = string(ctc.FeatureStore.UnitTable.UnitID);
@@ -36,7 +36,7 @@ ud_ids_all     = string({ctc.UnitDataArray.UnitID});   % row vector
 resp_idx_ud    = ismember(ud_ids_all, resp_uids_all);  % UnitDataArray order, row vector
 
 % Ensure harmonized waveforms/ACGs are available (may not be set yet if
-% diagnosticResponsiveUnits is called before generateTrainLabels)
+% diagnosticGroundTruthUnits is called before generateTrainLabels)
 if isempty(ctc.HarmonizedWaveforms)
     try
         ctc.buildNormalizedFeatures();
@@ -45,7 +45,7 @@ if isempty(ctc.HarmonizedWaveforms)
     end
 end
 
-% ── Tile (a): Per-culture responsive fraction ─────────────────────────────────
+% ── Tile (a): Per-culture label-1 fraction ────────────────────────────────────
 nexttile(1);
 try
     fs           = ctc.FeatureStore;
@@ -72,8 +72,8 @@ try
     xticks(1:n_cult);
     xticklabels(string(sorted_labels));
     xtickangle(45);
-    ylabel('Responsive fraction');
-    title('Responsive fraction per culture');
+    ylabel('Label-1 fraction');
+    title('Label-1 fraction per culture');
     box off;
 catch ME
     cla; axis off;
@@ -97,15 +97,15 @@ try
     hold on;
     if ~isempty(s_nonresp)
         histogram(s_nonresp, edges, 'FaceColor', C_NONRESP, 'FaceAlpha', 0.3, ...
-            'EdgeColor', 'none', 'DisplayName', 'Non-responsive');
+            'EdgeColor', 'none', 'DisplayName', 'Non-label-1');
     end
     if ~isempty(s_resp)
         histogram(s_resp, edges, 'FaceColor', C_RESP, 'FaceAlpha', 0.5, ...
-            'EdgeColor', 'none', 'DisplayName', 'Responsive');
+            'EdgeColor', 'none', 'DisplayName', 'Label 1');
         xline(median(s_resp), '--', 'Color', C_RESP, 'LineWidth', 1.5);
     end
     hold off;
-    xlabel('Responsiveness strength (|rho| or effect size)');
+    xlabel('Ground-truth strength (|rho| or effect size)');
     ylabel('Count');
     title('Strength distribution');
     legend('Location', 'northeast', 'Box', 'off');
@@ -120,7 +120,7 @@ end
 % ── Tile (c): Dose-response curves ───────────────────────────────────────────
 nexttile(3);
 try
-    detail = ctc.ResponsivenessDetail;
+    detail = ctc.GroundTruthLabel1Detail;
     if isempty(detail) || isempty(detail.fr_matrix) || isempty(detail.dose_values)
         error('No dose-response data');
     end
@@ -131,8 +131,8 @@ try
         error('Single dose — no curve to plot');
     end
 
-    % Map responsive flag to unique units by UnitID matching (order-independent).
-    % ResponsiveUnitIdx is in FeatureStore order; fr_matrix rows are indexed
+    % Map label-1 flag to unique units by UnitID matching (order-independent).
+    % GroundTruthLabel1Idx is in FeatureStore order; fr_matrix rows are indexed
     % by unique UnitIDs from FeatureStore. Use UnitID matching to avoid any
     % positional indexing between UnitDataArray and FeatureStore.
     unit_ids_table = string(ctc.FeatureStore.UnitTable.UnitID);
@@ -141,7 +141,7 @@ try
 
     % Normalize each unit's curve to its baseline (FR at the lowest dose).
     %
-    % Deliberately uses a HIGHER floor (0.1 Hz) than identifyResponsiveUnits'
+    % Deliberately uses a HIGHER floor (0.1 Hz) than identifyGroundTruthUnits'
     % own Stage 2 fold-change guard (0.01 Hz) -- that lower floor is a
     % division-by-zero guard for the classifier, tuned to not miss real
     % low-firing responders, not a "this baseline is reliable" threshold.
@@ -169,19 +169,19 @@ try
     x_vals = dose_vals;
 
     hold on;
-    % Non-responsive units — thin grey
+    % Non-label-1 units — thin grey
     nr_rows = find(nr_u_norm);
     for u = nr_rows
         y = fr_norm(u, :);
         plot(x_vals, y, '-', 'Color', [C_NONRESP, 0.15], 'LineWidth', 0.5);
     end
-    % Responsive units — red with alpha
+    % Label-1 units — red with alpha
     r_rows = find(resp_u_norm);
     for u = r_rows
         y = fr_norm(u, :);
         plot(x_vals, y, '-', 'Color', [C_RESP, 0.5], 'LineWidth', 0.8);
     end
-    % Mean ± SEM for responsive units
+    % Mean ± SEM for label-1 units
     if ~isempty(r_rows)
         mean_resp = mean(fr_norm(r_rows, :), 1, 'omitnan');
         sem_resp  = std(fr_norm(r_rows, :), 0, 1, 'omitnan') / sqrt(numel(r_rows));
@@ -196,7 +196,7 @@ try
     end
     xlabel(sprintf('Dose (%s)', ctc.Parameters.UMAP.GroupingVar));
     ylabel('Fold change from baseline');
-    title(sprintf('Dose-response curves (normalised, n=%d/%d responsive)', ...
+    title(sprintf('Dose-response curves (normalised, n=%d/%d label-1)', ...
         numel(r_rows), sum(resp_u_norm)));
     box off;
 catch ME
@@ -211,7 +211,7 @@ catch ME
     end
 end
 
-% ── Tile (d): Mean waveform by responsiveness ─────────────────────────────────
+% ── Tile (d): Mean waveform by ground-truth label ─────────────────────────────
 nexttile(4);
 try
     wf = ctc.HarmonizedWaveforms;   % (N_samples x N_units), full array
@@ -238,14 +238,14 @@ try
         sem_nr = std(wf_nonresp, 0, 2) / sqrt(size(wf_nonresp, 2));
         shadedErrorBar_local(t_ms, mu_nr', sem_nr', C_NONRESP, 0.3);
         plot(t_ms, mu_nr, '-', 'Color', C_NONRESP, 'LineWidth', 1.5, ...
-            'DisplayName', 'Non-responsive');
+            'DisplayName', 'Non-label-1');
     end
     if ~isempty(wf_resp)
         mu_r  = mean(wf_resp, 2);
         sem_r = std(wf_resp, 0, 2) / sqrt(size(wf_resp, 2));
         shadedErrorBar_local(t_ms, mu_r', sem_r', C_RESP, 0.3);
         plot(t_ms, mu_r, '-', 'Color', C_RESP, 'LineWidth', 1.5, ...
-            'DisplayName', 'Responsive');
+            'DisplayName', 'Label 1');
     end
     hold off;
 
@@ -260,7 +260,7 @@ catch ME
         'Units', 'normalized', 'HorizontalAlignment', 'center', 'FontSize', 8);
 end
 
-% ── Tile (e): Mean ACG by responsiveness ──────────────────────────────────────
+% ── Tile (e): Mean ACG by ground-truth label ──────────────────────────────────
 nexttile(5);
 try
     acg = ctc.HarmonizedACGs;   % (N_bins x N_units), full array
@@ -282,14 +282,14 @@ try
         sem_nr = std(acg_nonresp, 0, 2) / sqrt(size(acg_nonresp, 2));
         shadedErrorBar_local(lag_ms, mu_nr', sem_nr', C_NONRESP, 0.3);
         plot(lag_ms, mu_nr, '-', 'Color', C_NONRESP, 'LineWidth', 1.5, ...
-            'DisplayName', 'Non-responsive');
+            'DisplayName', 'Non-label-1');
     end
     if ~isempty(acg_resp)
         mu_r  = mean(acg_resp, 2);
         sem_r = std(acg_resp, 0, 2) / sqrt(size(acg_resp, 2));
         shadedErrorBar_local(lag_ms, mu_r', sem_r', C_RESP, 0.3);
         plot(lag_ms, mu_r, '-', 'Color', C_RESP, 'LineWidth', 1.5, ...
-            'DisplayName', 'Responsive');
+            'DisplayName', 'Label 1');
     end
     hold off;
 
@@ -327,9 +327,9 @@ try
 
     summary_lines = {
         sprintf('Total units:      %d', n_total)
-        sprintf('Responsive:       %d', n_resp)
-        sprintf('Non-responsive:   %d', n_nonresp)
-        sprintf('Responsive %%:     %.1f%%', pct_resp)
+        sprintf('Label 1:          %d', n_resp)
+        sprintf('Non-label-1:      %d', n_nonresp)
+        sprintf('Label-1 %%:        %.1f%%', pct_resp)
         ''
         sprintf('Method:  %s', method)
         thresh_str
@@ -351,7 +351,7 @@ catch ME
 end
 
 % ── Save / hide ───────────────────────────────────────────────────────────────
-ctc.saveDiagnosticFigure(fig, 'responsive_units');
+ctc.saveDiagnosticFigure(fig, 'ground_truth_units');
 
 end
 

@@ -3,15 +3,15 @@
 % Classifies neurons as excitatory (1) or inhibitory (2) using a transductive
 % graph-based pipeline. All units are embedded together in a single unsupervised
 % UMAP; Louvain community detection identifies inhibitory communities from their
-% responsive-unit enrichment; label propagation on the UMAP graph assigns cell
-% types to every unit without a separate test-set projection.
+% ground-truth label-1 enrichment; label propagation on the UMAP graph assigns
+% cell types to every unit without a separate test-set projection.
 %
 % Two ground-truth strategies are supported, covered in separate parts:
 %
 %   PART A — Drug-Response Classification (sections 1–10)
 %     Bootstrap firing-rate test identifies units that increase firing after
-%     stimulus — these are the inhibitory ground-truth set. Louvain communities
-%     are evaluated by their fraction of responsive units.
+%     stimulus — these become ground-truth class 1 (inhibitory). Louvain
+%     communities are evaluated by their fraction of ground-truth label-1 units.
 %
 %   PART B — Metadata-Based Classification (sections 11–14)
 %     Labels read directly from a UnitTable column (e.g. optogenetics tag,
@@ -24,7 +24,7 @@
 %   classifyUnitsEnsemble() — majority vote across multiple RNG seeds (default)
 %
 % Pipeline:
-%   identifyResponsiveUnits()       <- flag drug-responsive (inhibitory) candidates
+%   identifyGroundTruthUnits()      <- flag drug-responsive (inhibitory) candidates
 %   [optimizeUnsupervisedUMAP()]    <- optional Phase 1 BayOpt (recommended)
 %   generateTrainLabels()           <- Louvain on UMAP graph -> inh/CE training set
 %   classify()                      <- label propagation on UMAP graph (transductive)
@@ -197,17 +197,17 @@ ctc = CellTypeClassifier(fs, ud, params);
 %   ctc.attachProcPaths(proc_files, false)  % detect + warn only, no disk writes
 ctc.attachProcPaths(proc_files);
 
-%% 3  Identify responsive units (drug-response)
+%% 3  Identify ground-truth units (drug-response)
 %
 % Bootstrap permutation test: compares pre-stimulus vs post-stimulus firing
 % rate across cultures. Units with a significant rate increase become the
-% inhibitory candidate set (positive class).
+% inhibitory candidate set (ground-truth class 1).
 
-ctc.identifyResponsiveUnits();
+ctc.identifyGroundTruthUnits();
 
 fprintf('Inhibitory candidates: %d / %d total units (%.1f%%)\n', ...
-    sum(ctc.ResponsiveUnitIdx), numel(ctc.ResponsiveUnitIdx), ...
-    100 * mean(ctc.ResponsiveUnitIdx));
+    sum(ctc.GroundTruthLabel1Idx), numel(ctc.GroundTruthLabel1Idx), ...
+    100 * mean(ctc.GroundTruthLabel1Idx));
 
 %% 4  Generate training labels (Louvain community detection)
 %
@@ -256,7 +256,7 @@ ctc.generateTrainLabels();         % now forces a fresh UMAP fit
 % Run this when default parameters produce unsatisfying community structure.
 
 ctc_opt = CellTypeClassifier(fs, ud, params);
-ctc_opt.identifyResponsiveUnits();
+ctc_opt.identifyGroundTruthUnits();
 results = ctc_opt.optimizeUnsupervisedUMAP();
 fprintf('Phase 1 BayOpt: best coherence = %.3f\n', -results.bestObjective);
 ctc_opt.generateTrainLabels();
@@ -319,7 +319,7 @@ fprintf('ACG      : %d x %d\n', size(acg,1), size(acg,2));
 
 %% 10  Troubleshooting (drug-response)
 %
-% -- Problem: fewer than ~10 responsive units per culture --
+% -- Problem: fewer than ~10 ground-truth label-1 units per culture --
 %   1. Relax Bootstrap.Alpha to 1e-6.
 %   2. Switch to Bootstrap.GroundTruthMethod = 'full_curve' for dose-response.
 %   3. Use 'metadata' if external labels are available (see Part B).
@@ -350,7 +350,7 @@ fprintf('ACG      : %d x %d\n', size(acg,1), size(acg,2));
 % Key differences from drug-response (Part A):
 %   - No bootstrap firing-rate test is run.
 %   - Both classes (excitatory and inhibitory) have explicit ground truth.
-%   - identifyResponsiveUnits() reads labels from a UnitTable column instead
+%   - identifyGroundTruthUnits() reads labels from a UnitTable column instead
 %     of performing statistical tests.
 %   - The Louvain community detection still runs for outlier filtering, but
 %     counterexamples come from explicit labels, not distance-based selection.
@@ -367,18 +367,22 @@ fs_file = fullfile(save_dir, 'FeatureStore.mat');
 
 fs_meta = FeatureStore.load(fs_file);
 
+legacy_mats   = fullfile(string(path_list), 'MEArecording.mat');
+legacy_files   = path_list(isfile(legacy_mats));
+converted_dirs = fullfile(legacy_files,"test_proc");
+
 %% 11  Parameter setup (metadata method)
 %
 % The key parameter is Bootstrap.GroundTruthMethod = 'metadata'.
 % You must also specify:
-%   LabelField:                column name in FeatureStore.UnitTable
-%   ResponsiveClassValue:      value in that column for the "responsive" class
-%   CounterexampleClassValue:  value for the counterexample class (optional;
-%                              if empty, any non-responsive non-empty value is used)
+%   LabelField:               column name in FeatureStore.UnitTable
+%   GroundTruthLabel1Value:   value in that column for ground-truth class 1
+%   GroundTruthLabel2Value:   value for ground-truth class 2 (optional;
+%                             if empty, any other non-empty value is used)
 %
 % Example: if UnitTable has a column "CellType" with values "excitatory"
-% and "inhibitory", set LabelField = "CellType", ResponsiveClassValue =
-% "inhibitory", CounterexampleClassValue = "excitatory".
+% and "inhibitory", set LabelField = "CellType", GroundTruthLabel1Value =
+% "inhibitory", GroundTruthLabel2Value = "excitatory".
 
 params_meta = CellTypeClassifier.returnDefaultParams();
 
@@ -388,14 +392,14 @@ params_meta.Harmonization.ACGLag     = 2;
 params_meta.Harmonization.ACGSource  = 'FullACG';
 
 % Metadata-specific parameters
-params_meta.Bootstrap.GroundTruthMethod       = 'metadata';
-params_meta.Bootstrap.LabelField              = 'EI_Ratio';       % column in UnitTable
-params_meta.Bootstrap.ResponsiveClassValue    = '0:100';           % value -> inhibitory
-params_meta.Bootstrap.CounterexampleClassValue = '100:0';          % value -> excitatory
+params_meta.Bootstrap.GroundTruthMethod      = 'metadata';
+params_meta.Bootstrap.LabelField             = 'E_IRatio';   % column in UnitTable
+params_meta.Bootstrap.GroundTruthLabel1Value = '0:100';      % value -> inhibitory
+params_meta.Bootstrap.GroundTruthLabel2Value = '100:0';      % value -> excitatory
 
-% ResponsiveClassLabel controls which numeric label (1 or 2) the responsive
-% class maps to. Default 2 = responsive -> inhibitory (standard convention).
-params_meta.TrainLabels.ResponsiveClassLabel = 2;
+% GroundTruthLabel1 controls which numeric label (1 or 2) ground-truth class 1
+% maps to. Default 2 = class 1 -> inhibitory (standard convention).
+params_meta.TrainLabels.GroundTruthLabel1 = 2;
 
 % UMAP settings (same as Part A, but GroupingVar/GroupingValues may differ)
 params_meta.UMAP.NDims           = 5;
@@ -415,17 +419,33 @@ params_meta.Ensemble.MinAgreement = 0.6;
 
 params_meta.RNGSeed = 42;
 
+%%
+% Only Units (with waveform/ACG data) are needed here, not Connectivity/
+% Bursts/raw SpikeData — RecordingProcessor.loadForFeatureStore reads the
+% lightweight feature sidecar (written automatically by save()) instead of
+% the full processor, typically an order of magnitude less data per file.
+% good_proc_paths = sorting_paths(keep_idx);
+proc_files = fullfile(converted_dirs,'RecordingProcessor.mat');
+
+ud_cell = cell(1, numel(proc_files));
+parfor i = 1:numel(proc_files)
+    s = RecordingProcessor.loadForFeatureStore(proc_files(i));
+    ud_cell{i} = s.Units;
+end
+ud_meta = [ud_cell{:}];
+clear ud_cell
+
 %% 12  Construct classifier and identify labeled units
 
-ctc_meta = CellTypeClassifier(fs, ud, params_meta);
+ctc_meta = CellTypeClassifier(fs_meta, ud_meta, params_meta);
 
-% identifyResponsiveUnits reads labels from UnitTable — no FR test is run.
-ctc_meta.identifyResponsiveUnits();
+% identifyGroundTruthUnits reads labels from UnitTable — no FR test is run.
+ctc_meta.identifyGroundTruthUnits();
 
-n_resp = sum(ctc_meta.ResponsiveUnitIdx);
-n_ce   = sum(ctc_meta.CounterexampleUnitIdx);
-n_total = numel(ctc_meta.ResponsiveUnitIdx);
-fprintf('Metadata labels: %d responsive, %d counterexamples, %d unlabeled\n', ...
+n_resp = sum(ctc_meta.GroundTruthLabel1Idx);
+n_ce   = sum(ctc_meta.GroundTruthLabel2Idx);
+n_total = numel(ctc_meta.GroundTruthLabel1Idx);
+fprintf('Metadata labels: %d class-1, %d class-2, %d unlabeled\n', ...
     n_resp, n_ce, n_total - n_resp - n_ce);
 
 %% 13  Generate training labels and classify
@@ -449,8 +469,8 @@ fprintf('Waveform : %d x %d at %.0f Hz\n', size(wf_m,1), size(wf_m,2), sr_m);
 fprintf('ACG      : %d x %d\n', size(acg_m,1), size(acg_m,2));
 
 % Optional visualization
-% plotCellTypeFeatures(ctc_meta);
-% sortACGsByPeak(ctc_meta.HarmonizedACGs');
+plotCellTypeFeatures(ctc_meta);
+sortACGsByPeak(ctc_meta.HarmonizedACGs');
 
 % If ground-truth labels are available for all units, evaluate accuracy:
 % gt_labels = ... ;   % (1 x N) ground truth: 1=exc, 2=inh
@@ -466,8 +486,8 @@ fprintf('ACG      : %d x %d\n', size(acg_m,1), size(acg_m,2));
 % Verify that classification is stable across RNG seeds. Target ARI > 0.90.
 % Works for both drug-response and metadata-based classifiers.
 
-% stability = ctc.assessStability('NRuns', 5);
-% fprintf('Stability: ARI = %.3f +/- %.3f\n', stability.meanARI, stability.stdARI);
+stability = ctc_meta.assessStability('NRuns', 5);
+fprintf('Stability: ARI = %.3f +/- %.3f\n', stability.meanARI, stability.stdARI);
 
 %% 16  Activity/waveform confound check
 %
@@ -475,7 +495,7 @@ fprintf('ACG      : %d x %d\n', size(acg_m,1), size(acg_m,2));
 % tiles can show a large ACG baseline gap between predicted classes with
 % almost no corresponding waveform-shape difference — a red flag that the
 % classifier may be separating units by firing rate/regularity rather than
-% true cell identity (identifyResponsiveUnits' ground truth is itself
+% true cell identity (identifyGroundTruthUnits' ground truth is itself
 % firing-rate-based, so this is a real circularity risk).
 %
 % This compares curated, literature-validated E/I features (FiringRate, CV2,
@@ -487,6 +507,18 @@ fprintf('ACG      : %d x %d\n', size(acg_m,1), size(acg_m,2));
 % the classifier capturing genuine, independent cell-type information.
 
 % ctc.diagnosticActivityConfound();
+
+%% 16b  Waveform/ACG profile by metadata field (ground truth, not predicted labels)
+%
+% Groups units purely by a FeatureStore.UnitTable metadata column (e.g. the
+% culture E/I mixing ratio) — independent of anything the classifier predicted.
+% One column per unique field value; top row = mean waveform +/- SEM, bottom
+% row = mean ACG +/- SEM. Useful for checking whether raw waveform/ACG shape
+% tracks the known ground-truth quantity at all, before looking at what the
+% classifier did with it.
+
+% ctc_meta.diagnosticMetadataProfile();                     % groups by E_IRatio
+% ctc_meta.diagnosticMetadataProfile('Field', 'Mutation');   % or any other column
 
 %% 17  Parent_ACG maintenance
 %

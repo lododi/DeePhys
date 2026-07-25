@@ -33,6 +33,7 @@ function [tf_outlier, info] = runOutlierDetection(candidate_coords, contaminatio
 
     try
         gmm = fitgmdist(scores(:), 2, 'RegularizationValue', 1e-6, ...
+            'Replicates', 5, ...
             'Options', statset('MaxIter', 200, 'TolFun', 1e-6));
     catch
         tf_outlier = false(n, 1);

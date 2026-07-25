@@ -1,5 +1,5 @@
-function identifyResponsiveUnits(ctc, metadata_filter)
-% IDENTIFYRESPONSIVEUNITS  Identify units with significant firing rate changes.
+function identifyGroundTruthUnits(ctc, metadata_filter)
+% IDENTIFYGROUNDTRUTHUNITS  Assign ground-truth class 1 (dose-response test or metadata label).
 %
 % Two methods controlled by Parameters.Bootstrap.GroundTruthMethod:
 %
@@ -24,11 +24,11 @@ function identifyResponsiveUnits(ctc, metadata_filter)
 %       Per-unit ground truth labels read directly from a column in
 %       FeatureStore.UnitTable. No firing-rate tests are run. Both classes
 %       have explicit ground truth (pure culture scenario).
-%       Parameters used: LabelField, ResponsiveClassValue.
+%       Parameters used: LabelField, GroundTruthLabel1Value.
 %         LabelField: column name in UnitTable (e.g. "CellType")
-%         ResponsiveClassValue: value mapping to ResponsiveClassLabel
+%         GroundTruthLabel1Value: value mapping to ground-truth class 1
 %           (e.g. "inhibitory"). Units with other non-empty values become
-%           explicit counterexample ground truth (ctc.CounterexampleUnitIdx).
+%           ground-truth class 2 (ctc.GroundTruthLabel2Idx).
 %
 % Direction is controlled by Parameters.Bootstrap.Direction:
 %   "increase" - units whose FR increases with GroupingVar (default)
@@ -36,7 +36,7 @@ function identifyResponsiveUnits(ctc, metadata_filter)
 %   "both"     - either direction
 %
 % Optional FDR correction: Parameters.Bootstrap.UseFDR (Benjamini-Hochberg).
-% Optional strength filter: Parameters.Bootstrap.MinResponsiveStrength.
+% Optional strength filter: Parameters.Bootstrap.MinGroundTruthLabel1Strength.
 %
 % INPUTS:
 %   ctc             - CellTypeClassifier
@@ -69,16 +69,16 @@ group_field = string(ctc.Parameters.UMAP.GroupingVar);
 % -- Metadata method: read labels directly from UnitTable ----------------------
 if strcmp(method, 'metadata')
     label_field = string(p.LabelField);
-    resp_value  = string(p.ResponsiveClassValue);
-    ce_value    = p.CounterexampleClassValue;   % [] or string/string array
-    resp_label  = ctc.Parameters.TrainLabels.ResponsiveClassLabel;
+    resp_value  = string(p.GroundTruthLabel1Value);
+    ce_value    = p.GroundTruthLabel2Value;   % [] or string/string array
+    resp_label  = ctc.Parameters.TrainLabels.GroundTruthLabel1;
 
     assert(~isempty(label_field) && label_field ~= "", ...
         'CellTypeClassifier:noLabelField', ...
         'Bootstrap.LabelField must be set when GroundTruthMethod is "metadata".');
     assert(~isempty(resp_value) && resp_value ~= "", ...
-        'CellTypeClassifier:noResponsiveClassValue', ...
-        'Bootstrap.ResponsiveClassValue must be set when GroundTruthMethod is "metadata".');
+        'CellTypeClassifier:noGroundTruthLabel1Value', ...
+        'Bootstrap.GroundTruthLabel1Value must be set when GroundTruthMethod is "metadata".');
     assert(ismember(label_field, string(fs.UnitTable.Properties.VariableNames)), ...
         'CellTypeClassifier:labelFieldMissing', ...
         'LabelField "%s" not found in FeatureStore.UnitTable. Available: %s', ...
@@ -93,15 +93,15 @@ if strcmp(method, 'metadata')
         % Default: any non-empty, non-responsive label is a counterexample
         ce_idx = ~resp_idx & raw_labels ~= "" & raw_labels ~= "NaN";
     else
-        % Restricted: only rows matching CounterexampleClassValue exactly
+        % Restricted: only rows matching GroundTruthLabel2Value exactly
         ce_value = string(ce_value);
         ce_idx   = ~resp_idx & ismember(raw_labels, ce_value);
     end
 
-    ctc.ResponsiveUnitIdx       = resp_idx(:)';
-    ctc.ResponsiveUnitDirection = repmat("none", 1, N_total);
-    ctc.ResponsiveStrength      = double(resp_idx(:)');
-    ctc.CounterexampleUnitIdx   = ce_idx(:)';
+    ctc.GroundTruthLabel1Idx       = resp_idx(:)';
+    ctc.GroundTruthLabel1Direction = repmat("none", 1, N_total);
+    ctc.GroundTruthLabel1Strength  = double(resp_idx(:)');
+    ctc.GroundTruthLabel2Idx       = ce_idx(:)';
 
     n_resp = sum(resp_idx);
     n_ce   = sum(ce_idx);
@@ -181,7 +181,7 @@ for c = 1:numel(unique_cultures)
 
     if use_full_curve
         % -- Full curve: per-unit Spearman dose-response ----------------------
-        [flag_inc, flag_dec, strengths, pvals] = fullCurveResponsive( ...
+        [flag_inc, flag_dec, strengths, pvals] = fullCurveGroundTruth( ...
             ud, ud_indices, unit_rows, unit_ids_in_table, ...
             meta, rec_ids_here, unit_rec_ids, unit_mask, ud_order, ...
             group_field, p);
@@ -342,15 +342,15 @@ for c = 1:numel(unique_cultures)
     end
 end
 
-ctc.ResponsiveUnitIdx       = responsive_idx;
-ctc.ResponsiveUnitDirection = responsive_direction;
-ctc.ResponsiveStrength      = responsive_strength;
+ctc.GroundTruthLabel1Idx       = responsive_idx;
+ctc.GroundTruthLabel1Direction = responsive_direction;
+ctc.GroundTruthLabel1Strength  = responsive_strength;
 
-% -- Store ResponsivenessDetail for diagnostics --------------------------------
+% -- Store GroundTruthLabel1Detail for diagnostics -----------------------------
 % Build per-unit FR-vs-dose matrix from UnitData. For full_curve method this
 % reuses the already-computed FR values via a lightweight pass over UnitData.
 % For two_window, only pre and post FR are stored (2-point dose response).
-ctc.ResponsivenessDetail = buildResponsivenessDetail(ctc, unit_ids_in_table, ...
+ctc.GroundTruthLabel1Detail = buildGroundTruthLabel1Detail(ctc, unit_ids_in_table, ...
     ud, ud_order, meta, group_field, method, p);
 
 % -- FDR correction across all unit p-values ---------------------------------
@@ -373,9 +373,9 @@ if p.UseFDR
         end
 
         n_before = sum(responsive_idx);
-        ctc.ResponsiveUnitIdx = responsive_idx & significant;
-        fprintf('FDR correction (q=%.3f): %d -> %d responsive units\n', ...
-            p.FDRLevel, n_before, sum(ctc.ResponsiveUnitIdx));
+        ctc.GroundTruthLabel1Idx = responsive_idx & significant;
+        fprintf('FDR correction (q=%.3f): %d -> %d ground-truth label-1 units\n', ...
+            p.FDRLevel, n_before, sum(ctc.GroundTruthLabel1Idx));
     else
         warning('CellTypeClassifier:fdrNoPValues', ...
             'UseFDR=true but no p_values available. Check method output.');
@@ -383,37 +383,37 @@ if p.UseFDR
 end
 
 % -- Strength-based filtering ------------------------------------------------
-if p.MinResponsiveStrength > 0
-    weak      = ctc.ResponsiveUnitIdx & (responsive_strength < p.MinResponsiveStrength);
+if p.MinGroundTruthLabel1Strength > 0
+    weak      = ctc.GroundTruthLabel1Idx & (responsive_strength < p.MinGroundTruthLabel1Strength);
     n_demoted = sum(weak);
-    ctc.ResponsiveUnitIdx(weak) = false;
+    ctc.GroundTruthLabel1Idx(weak) = false;
     if n_demoted > 0
-        fprintf('Demoted %d weak responders (strength < %.2f)\n', n_demoted, p.MinResponsiveStrength);
+        fprintf('Demoted %d weak label-1 candidates (strength < %.2f)\n', n_demoted, p.MinGroundTruthLabel1Strength);
     end
 end
 
 % Count unique units (same UnitID spans multiple rows in full_curve mode)
-n_responsive = numel(unique(unit_ids_in_table(ctc.ResponsiveUnitIdx)));
+n_responsive = numel(unique(unit_ids_in_table(ctc.GroundTruthLabel1Idx)));
 n_total      = numel(unique(unit_ids_in_table));
 
 if n_skipped > 0
-    fprintf('Responsive units (%s): %i / %i (%.1f%%)  [%i / %i cultures skipped by filter]\n', ...
+    fprintf('Ground-truth label-1 units (%s): %i / %i (%.1f%%)  [%i / %i cultures skipped by filter]\n', ...
         p.Direction, n_responsive, n_total, 100 * n_responsive / n_total, ...
         n_skipped, numel(unique_cultures));
 else
-    fprintf('Responsive units (%s): %i / %i (%.1f%%)\n', ...
+    fprintf('Ground-truth label-1 units (%s): %i / %i (%.1f%%)\n', ...
         p.Direction, n_responsive, n_total, 100 * n_responsive / n_total);
 end
 
 % -- Optional diagnostic ------------------------------------------------------
 if ctc.Parameters.Diagnostics.Enable
-    ctc.diagnosticResponsiveUnits();
+    ctc.diagnosticGroundTruthUnits();
 end
 end
 
-%% ── Helper: build ResponsivenessDetail struct ─────────────────────────────
+%% ── Helper: build GroundTruthLabel1Detail struct ──────────────────────────
 
-function detail = buildResponsivenessDetail(ctc, unit_ids_in_table, ud, ud_order, ...
+function detail = buildGroundTruthLabel1Detail(ctc, unit_ids_in_table, ud, ud_order, ...
     meta, group_field, method, p)
 % Builds per-unit FR-vs-dose matrix for diagnostic plotting.
 % For full_curve: extracts FR across all recordings sorted by GroupingVar.
@@ -478,7 +478,7 @@ end
 
 %% ── Helper: per-unit full-curve dose-response ─────────────────────────────
 
-function [flag_inc, flag_dec, strengths, pvals] = fullCurveResponsive( ...
+function [flag_inc, flag_dec, strengths, pvals] = fullCurveGroundTruth( ...
     ud, ud_indices, unit_rows, unit_ids_in_table, ...
     meta, rec_ids_here, unit_rec_ids, unit_mask, ud_order, ...
     group_field, p)

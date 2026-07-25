@@ -174,7 +174,7 @@ ctc.attachProcPaths(cortex_files);
 
 % metadata_filter restricts which cultures contribute candidates
 % e.g. only cultures where AAV == 128 (DREADD-inhibitory)
-ctc.identifyResponsiveUnits({'AAV', 128});
+ctc.identifyGroundTruthUnits({'AAV', 128});
 ctc.discardSegmentUnits();
 ctc.classifyUnits();
 

@@ -3,10 +3,10 @@ function diagnosticTrainLabels(ctc)
 %
 % Tiles:
 %   (1,1) Filter funnel  — horizontal bar chart showing label-pipeline attrition
-%   (1,2) UMAP scatter   — community structure (background) + responsive/train overlays
+%   (1,2) UMAP scatter   — community structure (background) + label-1/train overlays
 %   (1,3) Silhouette     — per-unit silhouette values for training set
 %   (2,1) Cohen's d      — top 6 discriminative features
-%   (2,2) Community fractions — responsive fraction per Louvain community (or CE distances)
+%   (2,2) Community fractions — label-1 fraction per Louvain community (or CE distances)
 %   (2,3) UMAP scatter   — unsupervised embedding colored by training assignment
 %
 % Each tile is guarded by try/catch.
@@ -55,10 +55,10 @@ try
     exc_vals = [fc.n_ce_in, fc.n_ce_after_outlier];
 
     if use_community
-        inh_labels = {'Responsive candidates', 'After community filter', 'After purity filter'};
+        inh_labels = {'Label-1 candidates', 'After community filter', 'After purity filter'};
         exc_labels = {'CE community pool', 'CE training set'};
     else
-        inh_labels = {'Responsive candidates', 'After outlier detection', 'After geom. filter'};
+        inh_labels = {'Label-1 candidates', 'After outlier detection', 'After geom. filter'};
         exc_labels = {'CE candidates', 'CE training set'};
     end
 
@@ -133,15 +133,15 @@ try
                 'MarkerFaceAlpha', 0.5);
         end
 
-        % Overlay responsive candidates
+        % Overlay label-1 candidates
         unit_ids_table  = string(ctc.FeatureStore.UnitTable.UnitID);
-        resp_uids_diag  = unique(unit_ids_table(ctc.ResponsiveUnitIdx));
+        resp_uids_diag  = unique(unit_ids_table(ctc.GroundTruthLabel1Idx));
         unique_ud_ids_d = string({nf.unique_ud.UnitID});
         resp_unique_mask = ismember(unique_ud_ids_d, resp_uids_diag);
         resp_global     = find(resp_unique_mask);
         if ~isempty(resp_global)
             scatter(u1(resp_global), u2(resp_global), 20, 'k', 'x', ...
-                'LineWidth', 0.8, 'DisplayName', 'Responsive');
+                'LineWidth', 0.8, 'DisplayName', 'Label 1');
         end
 
         % Training units on top
@@ -170,7 +170,7 @@ try
     else
         % Fallback: pipeline-stage coloring (original behaviour)
         unit_ids_table   = string(ctc.FeatureStore.UnitTable.UnitID);
-        resp_uids_diag   = unique(unit_ids_table(ctc.ResponsiveUnitIdx));
+        resp_uids_diag   = unique(unit_ids_table(ctc.GroundTruthLabel1Idx));
         unique_ud_ids_d  = string({nf.unique_ud.UnitID});
         resp_unique_mask = ismember(unique_ud_ids_d, resp_uids_diag);
         resp_global      = find(resp_unique_mask);
@@ -330,17 +330,17 @@ catch ME
         'FontSize', 8, 'Color', [0.6 0 0]);
 end
 
-% ── Tile (2,2): Community responsive fractions (or CE distances fallback) ─────
+% ── Tile (2,2): Community label-1 fractions (or CE distances fallback) ───────
 nexttile(5);
 try
     if use_community && isfield(tl_struct, 'community_ids') && ~isempty(tl_struct.community_ids)
-        % ── Community path: bar chart of responsive fraction per community ──────
+        % ── Community path: bar chart of label-1 fraction per community ─────────
         comm_ids     = tl_struct.community_ids;
         inh_comm_ids = tl_struct.inh_comm_ids;
         n_comm       = max(comm_ids);
 
         unit_ids_table   = string(ctc.FeatureStore.UnitTable.UnitID);
-        resp_uids_diag   = unique(unit_ids_table(ctc.ResponsiveUnitIdx));
+        resp_uids_diag   = unique(unit_ids_table(ctc.GroundTruthLabel1Idx));
         unique_ud_ids_d  = string({nf.unique_ud.UnitID});
         resp_unique_mask = ismember(unique_ud_ids_d, resp_uids_diag);
 
@@ -352,7 +352,7 @@ try
             end
         end
 
-        % Sort descending by responsive fraction
+        % Sort descending by label-1 fraction
         [sorted_frac, sort_ord] = sort(comm_resp_frac, 'descend');
         is_inh_sorted = ismember(sort_ord, inh_comm_ids);
 
@@ -375,8 +375,8 @@ try
         hold off;
 
         yticks([]);
-        xlabel('Responsive fraction');
-        title(sprintf('Community resp. fractions (Q=%.2f, %d inh, FDR q<%.3f)', ...
+        xlabel('Label-1 fraction');
+        title(sprintf('Community label-1 fractions (Q=%.2f, %d inh, FDR q<%.3f)', ...
             tl_struct.Q_modularity, numel(inh_comm_ids), ctc.Parameters.Community.CommunityFDRLevel));
         box off;
     else

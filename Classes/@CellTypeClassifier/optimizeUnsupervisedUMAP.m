@@ -1,7 +1,7 @@
 function results = optimizeUnsupervisedUMAP(ctc, opts)
 % OPTIMIZEUNSUPERVISEDUMAP  Phase 1 BayOpt: unsupervised UMAP + Louvain community coherence.
 %
-% Optimises unsupervised UMAP hyperparameters so that drug-responsive units
+% Optimises unsupervised UMAP hyperparameters so that ground-truth label-1 units
 % (inhibitory candidates) form a coherent Louvain community in the UMAP graph.
 %
 % OBJECTIVE — "community_coherence" (only option):
@@ -12,9 +12,9 @@ function results = optimizeUnsupervisedUMAP(ctc, opts)
 %     4. Run community_louvain (BCT) with LouvainResolution × LouvainRestarts;
 %        keep run with highest Q.
 %     5. Inhibitory communities: one-sided hypergeometric enrichment test per
-%        community vs. the population responsive rate, Benjamini-Hochberg
+%        community vs. the population label-1 rate, Benjamini-Hochberg
 %        FDR-corrected across communities (Community.CommunityFDRLevel).
-%     6. loss = -(fraction of responsive units in inhibitory communities).
+%     6. loss = -(fraction of ground-truth label-1 units in inhibitory communities).
 %
 % OPTIMIZED VARIABLES (from Parameters.BayesianOptimization.UnsupOptimizeVars):
 %   NNeighbors       — unsupervised UMAP n_neighbors (integer)
@@ -29,11 +29,11 @@ function results = optimizeUnsupervisedUMAP(ctc, opts)
 % run once more and stored in ctc.Reduction.Unsupervised / ctc.UMAP.
 %
 % REQUIRES:
-%   ctc.identifyResponsiveUnits() must have been run.
+%   ctc.identifyGroundTruthUnits() must have been run.
 %   Brain Connectivity Toolbox (community_louvain) must be on the MATLAB path.
 %
 % USAGE:
-%   ctc.identifyResponsiveUnits();
+%   ctc.identifyGroundTruthUnits();
 %   results = ctc.optimizeUnsupervisedUMAP();
 %   ctc.Parameters = parseStructParameters(ctc.Parameters, results.bestParams);
 %   ctc.generateTrainLabels();   % now uses optimised UMAP + Louvain params
@@ -53,8 +53,8 @@ arguments
     opts.Verbose (1,1) logical = true
 end
 
-assert(~isempty(ctc.ResponsiveUnitIdx), ...
-    'Run identifyResponsiveUnits() before optimizeUnsupervisedUMAP()');
+assert(~isempty(ctc.GroundTruthLabel1Idx), ...
+    'Run identifyGroundTruthUnits() before optimizeUnsupervisedUMAP()');
 assert(exist('community_louvain', 'file') == 2, ...
     ['community_louvain not found on the MATLAB path. ' ...
      'Add the Brain Connectivity Toolbox (BCT) to the path first.']);
@@ -109,18 +109,18 @@ n_acg  = sum(is_acg);
 n_wf   = sum(is_wf);
 N_all  = size(X_all, 1);
 
-% Responsive unit flags (global unique-unit indices)
+% Ground-truth label-1 flags (global unique-unit indices)
 unit_ids_table = string(ctc.FeatureStore.UnitTable.UnitID);
-resp_uids      = unique(unit_ids_table(ctc.ResponsiveUnitIdx));
+resp_uids      = unique(unit_ids_table(ctc.GroundTruthLabel1Idx));
 unique_ud_ids  = string({nf.unique_ud.UnitID});
 resp_unique    = ismember(unique_ud_ids, resp_uids);   % 1 × n_unique logical
 n_responsive   = sum(resp_unique);
-assert(n_responsive > 0, 'No responsive units found in NormalizedFeatures.');
+assert(n_responsive > 0, 'No ground-truth label-1 units found in NormalizedFeatures.');
 
-p_resp = n_responsive / N_all;   % baseline responsive probability (reported below)
+p_resp = n_responsive / N_all;   % baseline label-1 probability (reported below)
 
 if opts.Verbose
-    fprintf('Phase 1 BayOpt: %d units, %d responsive (p_resp=%.3f), %d features\n', ...
+    fprintf('Phase 1 BayOpt: %d units, %d label-1 (p_resp=%.3f), %d features\n', ...
         N_all, n_responsive, p_resp, size(X_all, 2));
 end
 
@@ -135,7 +135,7 @@ fixed_defaults = struct( ...
 
 % -- Adaptive LouvainResolution range -----------------------------------------
 % Target: communities of ~2-5× n_responsive units. Resolution scales with
-% N_all/n_responsive: fewer responsive units relative to total → need finer
+% N_all/n_responsive: fewer label-1 units relative to total → need finer
 % communities (higher resolution) to isolate them.
 lou_range = p_bo.LouvainResolutionRange;  % hard bounds from user
 if isfield(p_bo, 'AutoLouvainRange') && p_bo.AutoLouvainRange
@@ -252,7 +252,7 @@ function loss = objective(x)
     end
 
     % Identify inhibitory communities: hypergeometric enrichment vs. population
-    % responsive rate, BH-FDR corrected across communities.
+    % label-1 rate, BH-FDR corrected across communities.
     n_comm = max(best_M);
     [inh_comm_ids_ev, comm_resp_frac] = identifyInhibitoryCommunities( ...
         best_M, resp_unique, p_comm.CommunityFDRLevel);
@@ -262,7 +262,7 @@ function loss = objective(x)
     inh_mask = false(1, n_comm);
     inh_mask(inh_comm_ids_ev) = true;
 
-    % Community coherence: fraction of responsive units in inhibitory communities
+    % Community coherence: fraction of ground-truth label-1 units in inhibitory communities
     resp_in_inh = sum(resp_unique & inh_mask(best_M)');
     coherence   = resp_in_inh / n_responsive;
     loss        = -coherence;

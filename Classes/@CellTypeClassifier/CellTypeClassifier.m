@@ -17,7 +17,7 @@ classdef CellTypeClassifier < handle
     %
     % USAGE:
     %   ctc = CellTypeClassifier(featureStore, unitDataArray, params);
-    %   ctc.identifyResponsiveUnits();    % assign ground truth (FR test or metadata)
+    %   ctc.identifyGroundTruthUnits();   % assign ground truth (FR test or metadata)
     %   ctc.generateTrainLabels();        % UMAP embedding + training label assembly
     %   ctc.classify();                   % routes to classifyUnits or classifyUnitsEnsemble
     %   labels = ctc.UnitLabels;          % 1 = excitatory, 2 = inhibitory, NaN = unclassified
@@ -35,14 +35,14 @@ classdef CellTypeClassifier < handle
         UnitDataArray           UnitData        % (1 x N) raw unit data (spike times etc.)
         OriginalUnitDataArray   UnitData        % Pre-segment-filter UnitData (all recordings, for FullACG recomputation)
         Parameters              struct          % Merged from returnDefaultParams + user overrides
-        ResponsiveUnitIdx       logical         % (1 x N) units with a significant firing rate response
-        ResponsiveUnitDirection string          % (1 x N) "none" | "increase" | "decrease" per unit
-        ResponsiveStrength      double          % (1 x N) continuous response strength (rho or effect size)
-        ResponsivenessDetail    struct          % Per-unit dose-response data for diagnostics
+        GroundTruthLabel1Idx      logical       % (1 x N) units assigned to ground-truth class 1 (dose-response test, or metadata match)
+        GroundTruthLabel1Direction string       % (1 x N) "none" | "increase" | "decrease" per unit (dose-response methods only)
+        GroundTruthLabel1Strength  double       % (1 x N) continuous evidence strength (rho/effect size for dose-response; 0/1 for metadata)
+        GroundTruthLabel1Detail    struct       % Per-unit dose-response data for diagnostics
         %   .fr_matrix  (n_unique_units x n_doses) firing rates
         %   .dose_values (1 x n_doses) GroupingVar values
         %   .unit_ids   (1 x n_unique_units) UnitID strings
-        CounterexampleUnitIdx   logical         % (1 x N) explicit excitatory ground truth (metadata method only)
+        GroundTruthLabel2Idx      logical       % (1 x N) units assigned to ground-truth class 2 (explicit metadata label only)
         TrainLabels             struct          % .sorted_train_ids, .sorted_y_train, etc.
         %   Diagnostic fields: .resp_outlier_mask, .resp_geom_mask,
         %   .ce_outlier_mask, .ce_distances_from_inh_centroid,
@@ -190,7 +190,7 @@ classdef CellTypeClassifier < handle
         function clearCache(ctc)
             % CLEARCACHE  Invalidate all cached preprocessing and classification state.
             %
-            % Call after changing Parameters, ResponsiveUnitIdx, or UnitDataArray
+            % Call after changing Parameters, GroundTruthLabel1Idx, or UnitDataArray
             % post-construction to ensure subsequent pipeline calls recompute from scratch.
             % generateTrainLabels() calls this automatically at its start.
             ctc.NormalizedFeatures  = [];
@@ -214,17 +214,33 @@ classdef CellTypeClassifier < handle
             n_warn = 0;
 
             % ── ACG source ───────────────────────────────────────────────────
+            % Parent_ACG*/FullACG* columns only exist for recordings split from a
+            % longer parent session (RecordingProcessor.computeParentFeatures()
+            % needs SpikeData.ParentPath). Dose-response datasets (two_window/
+            % full_curve) are built from such segmented recordings, so the
+            % columns are expected there and their absence usually means a real
+            % misconfiguration. Metadata-labeled datasets are commonly standalone
+            % recordings with no parent segment, so the same absence is normal,
+            % not a misconfiguration — just note it instead of warning.
             if ~isempty(fs) && ~isempty(fs.UnitTable) && ...
                     string(p.Harmonization.ACGSource) == "FullACG"
                 all_cols = string(fs.UnitTable.Properties.VariableNames);
                 has_acg  = any(startsWith(all_cols, "Parent_ACG") | ...
                     startsWith(all_cols, "FullACG"));
                 if ~has_acg
-                    warning('CellTypeClassifier:noFullACGColumns', ...
-                        ['Harmonization.ACGSource="FullACG" but no Parent_ACG* or ' ...
-                        'FullACG* columns found in FeatureStore.UnitTable. ' ...
-                        'Will fall back to segment-level ACG computation.']);
-                    n_warn = n_warn + 1;
+                    if string(p.Bootstrap.GroundTruthMethod) == "metadata"
+                        fprintf(['Note: Harmonization.ACGSource="FullACG" but no Parent_ACG*/FullACG* ' ...
+                            'columns found in FeatureStore.UnitTable. Using segment-level ACG instead. ' ...
+                            'Expected for metadata-labeled recordings with no parent segment; ' ...
+                            'set ACGSource="ACG" to silence this note, or run ' ...
+                            'RecordingProcessor.computeParentFeatures() first if full-recording ACGs are needed.\n']);
+                    else
+                        warning('CellTypeClassifier:noFullACGColumns', ...
+                            ['Harmonization.ACGSource="FullACG" but no Parent_ACG* or ' ...
+                            'FullACG* columns found in FeatureStore.UnitTable. ' ...
+                            'Will fall back to segment-level ACG computation.']);
+                        n_warn = n_warn + 1;
+                    end
                 end
             end
 
@@ -692,17 +708,17 @@ classdef CellTypeClassifier < handle
             %                  FullCurveAlpha. Pre/PostCutout, BinSize, NIter, Alpha not used.
             %                  Falls back to "two_window" if fewer than MinRecordings recordings.
             %   "metadata"    — per-unit cell type labels come from a column in FeatureStore.UnitTable.
-            %                  LabelField specifies the column; ResponsiveClassValue specifies which
-            %                  value maps to ResponsiveClassLabel. Units with other non-empty values
-            %                  become explicit counterexample ground truth. No FR tests are run.
+            %                  LabelField specifies the column; GroundTruthLabel1Value specifies which
+            %                  value maps to ground-truth class 1 (TrainLabels.GroundTruthLabel1). Units
+            %                  with other non-empty values become ground-truth class 2. No FR tests are run.
             defaultParams.Bootstrap.GroundTruthMethod     = "full_curve";
             % metadata: read cell type labels directly from UnitTable.
             %   LabelField: column name in FeatureStore.UnitTable (e.g. "CellType")
-            %   ResponsiveClassValue: value in that column that maps to ResponsiveClassLabel
-            %     (e.g. "inhibitory"). Units with other non-empty values become counterexamples.
-            defaultParams.Bootstrap.LabelField            = "";   % e.g. "CellType"
-            defaultParams.Bootstrap.ResponsiveClassValue  = "";   % e.g. "inhibitory"
-            defaultParams.Bootstrap.CounterexampleClassValue = "";   % e.g. "excitatory"
+            %   GroundTruthLabel1Value: value in that column that maps to ground-truth class 1
+            %     (e.g. "inhibitory"). Units with other non-empty values become class 2.
+            defaultParams.Bootstrap.LabelField              = "";   % e.g. "CellType"
+            defaultParams.Bootstrap.GroundTruthLabel1Value  = "";   % e.g. "inhibitory"
+            defaultParams.Bootstrap.GroundTruthLabel2Value  = "";   % e.g. "excitatory"
             % two_window: compares mean FR between two recordings within a culture,
             %   selected by their GroupingVar value.
             %   PreGroupValue/PostGroupValue identify which recordings to compare.
@@ -723,7 +739,7 @@ classdef CellTypeClassifier < handle
             defaultParams.Bootstrap.ConfirmationAlpha     = 1e-3;        % full_curve stage 3: bootstrap p-value threshold
             defaultParams.Bootstrap.ConfirmationNIter     = 1000;        % full_curve stage 3: bootstrap iterations
             defaultParams.Bootstrap.Direction             = "increase";   % "increase" | "decrease" | "both"
-            defaultParams.Bootstrap.MinResponsiveStrength = 0;  % 0 = no filtering
+            defaultParams.Bootstrap.MinGroundTruthLabel1Strength = 0;  % 0 = no filtering
 
             % UseFDR: replace fixed Alpha with Benjamini-Hochberg FDR control.
             %   Scales correctly with dataset size — large datasets get proper
@@ -787,16 +803,16 @@ classdef CellTypeClassifier < handle
             defaultParams.UMAP.MaxCorrelation        = 0.99;
 
             % ── Training label generation ─────────────────────────────────────
-            defaultParams.TrainLabels.ResponsiveClassLabel = 2;  % 2=responsive->inhibitory, 1=responsive->excitatory
+            defaultParams.TrainLabels.GroundTruthLabel1 = 2;  % 2=label1->inhibitory, 1=label1->excitatory
 
             % ── Outlier detection ─────────────────────────────────────────────
-            % Method: controls how responsive-unit outliers are detected and how
-            %   counterexamples are selected when no explicit CE labels are provided.
+            % Method: controls how ground-truth-label-1 outliers are detected and how
+            %   counterexamples (label 2) are selected when no explicit CE labels are provided.
             %   "community" — Louvain community filter + graph purity check + k-medoids CE.
             %                  Falls back to "iforest" if communities are not well-separated.
             %   "iforest"   — Isolation forest on feature-space (PCA or UMAP domain) +
             %                  geometric consistency filter + distance-based CE selection.
-            %   "none"      — No outlier detection; all responsive units used as training
+            %   "none"      — No outlier detection; all label-1 units used as training
             %                  labels; distance-based CE selection without iforest filtering.
             defaultParams.OutlierDetection.Method                            = "community";
             defaultParams.OutlierDetection.CounterexampleRatio               = 1;    % 1:1 balanced default; use actual ratio for metadata
@@ -810,13 +826,13 @@ classdef CellTypeClassifier < handle
             % Used in generateTrainLabels for community-based CE selection.
             %   LouvainResolution: Louvain gamma parameter (1 = standard modularity;
             %     higher = finer communities). Set by optimizeUnsupervisedUMAP or manually.
-            %   CommunityFDRLevel: a community is inhibitory if its responsive-unit
-            %     enrichment (one-sided hypergeometric test vs. the population responsive
+            %   CommunityFDRLevel: a community is inhibitory if its ground-truth-label-1
+            %     enrichment (one-sided hypergeometric test vs. the population label-1
             %     rate) is significant at this Benjamini-Hochberg FDR level. Scales with
             %     community size, unlike a fixed relative/absolute fraction threshold,
             %     which lets small, noisy communities clear an arbitrary bar by chance.
-            %   CommunityFallbackThreshold: if fewer than this fraction of responsive units
-            %     land in inhibitory communities, fall back to distance-based CE selection.
+            %   CommunityFallbackThreshold: if fewer than this fraction of ground-truth-label-1
+            %     units land in inhibitory communities, fall back to distance-based CE selection.
             %   MinCEPerCommunity: minimum k-medoids selected from each CE community.
             %   PuritySigmaThreshold: robust z-score cutoff for graph purity outlier removal.
             %   LouvainRestarts: number of Louvain restarts; best-Q run is used.
@@ -851,7 +867,7 @@ classdef CellTypeClassifier < handle
             % ── Bayesian optimization ────────────────────────────────────────
             % Single-phase optimization (Phase 1):
             %   optimizeUnsupervisedUMAP: optimises unsupervised UMAP + Louvain parameters
-            %     for community_coherence — fraction of responsive units in inhibitory
+            %     for community_coherence — fraction of ground-truth-label-1 units in inhibitory
             %     Louvain communities. Variables: UnsupOptimizeVars.
             %   AutoLouvainRange: when true, the LouvainResolution search range is
             %     adapted based on N_all/n_responsive to target communities of
@@ -872,7 +888,7 @@ classdef CellTypeClassifier < handle
             % ── Diagnostics ───────────────────────────────────────────────────
             % Enable: when true, each pipeline method generates a diagnostic figure
             %   at the end of its execution. Each diagnostic method is also callable
-            %   independently: ctc.diagnosticResponsiveUnits(), etc.
+            %   independently: ctc.diagnosticGroundTruthUnits(), etc.
             % SaveDir: when non-empty, figures are saved as PNG to this directory.
             % ShowFigures: set false for headless/batch runs (saves without display).
             defaultParams.Diagnostics.Enable      = false;
@@ -903,8 +919,8 @@ classdef CellTypeClassifier < handle
     % =====================================================================
     methods
 
-        % Declared here; implemented in diagnosticResponsiveUnits.m
-        diagnosticResponsiveUnits(ctc)
+        % Declared here; implemented in diagnosticGroundTruthUnits.m
+        diagnosticGroundTruthUnits(ctc)
 
         % Declared here; implemented in diagnosticTrainLabels.m
         diagnosticTrainLabels(ctc)
@@ -914,6 +930,9 @@ classdef CellTypeClassifier < handle
 
         % Declared here; implemented in diagnosticActivityConfound.m
         diagnosticActivityConfound(ctc)
+
+        % Declared here; implemented in diagnosticMetadataProfile.m
+        diagnosticMetadataProfile(ctc, opts)
 
         % Declared here; implemented in diagnosticOptimization.m
         diagnosticOptimization(ctc, results)

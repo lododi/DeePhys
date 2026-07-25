@@ -12,7 +12,7 @@ function stability = assessStability(ctc, opts)
 % results.
 %
 % USAGE:
-%   ctc.identifyResponsiveUnits();
+%   ctc.identifyGroundTruthUnits();
 %   results = ctc.optimizeHyperparameters();
 %   ctc.Parameters = parseStructParameters(ctc.Parameters, results.bestParams);
 %   stability = ctc.assessStability(NRuns=10);
@@ -37,8 +37,8 @@ arguments
     opts.Verbose (1,1) logical = true
 end
 
-assert(~isempty(ctc.ResponsiveUnitIdx), ...
-    'Run identifyResponsiveUnits() before assessStability()');
+assert(~isempty(ctc.GroundTruthLabel1Idx), ...
+    'Run identifyGroundTruthUnits() before assessStability()');
 
 N = opts.NRuns;
 n_units = numel(ctc.UnitDataArray);
@@ -59,7 +59,7 @@ for r = 1:N
     temp_params.RNGSeed = seeds(r);
 
     temp_ctc = CellTypeClassifier(ctc.FeatureStore, ctc.UnitDataArray, temp_params);
-    temp_ctc.ResponsiveUnitIdx      = ctc.ResponsiveUnitIdx;
+    temp_ctc.GroundTruthLabel1Idx   = ctc.GroundTruthLabel1Idx;
     temp_ctc.OriginalUnitDataArray  = ctc.OriginalUnitDataArray;
 
     try

@@ -10,10 +10,10 @@ function generateTrainLabels(ctc, opts)
 %   4. Assemble training labels                           (assembleTrainLabels)
 %
 % Two label-source strategies:
-%   Drug response  — responsive units = inhibitory ground truth; CEs inferred.
-%   Metadata       — ctc.CounterexampleUnitIdx provides explicit excitatory labels.
+%   Drug response  — ground-truth label 1 = inhibitory ground truth; CEs inferred.
+%   Metadata       — ctc.GroundTruthLabel2Idx provides explicit excitatory labels.
 %
-% Requires ctc.ResponsiveUnitIdx (run identifyResponsiveUnits first).
+% Requires ctc.GroundTruthLabel1Idx (run identifyGroundTruthUnits first).
 % Sets: ctc.TrainLabels, ctc.NormalizationParams, ctc.Reduction.Unsupervised
 
 arguments
@@ -21,8 +21,8 @@ arguments
     opts.ReuseExistingUMAP (1,1) logical = true
 end
 
-assert(~isempty(ctc.ResponsiveUnitIdx), ...
-    'Run identifyResponsiveUnits() before generateTrainLabels()');
+assert(~isempty(ctc.GroundTruthLabel1Idx), ...
+    'Run identifyGroundTruthUnits() before generateTrainLabels()');
 
 p_umap  = ctc.Parameters.UMAP;
 p_outlr = ctc.Parameters.OutlierDetection;
@@ -40,35 +40,35 @@ ctc.NormalizationParams = norm_params;
 % -- Stage 2: unsupervised UMAP -----------------------------------------------
 [reduction, n_neighbors] = ctc.runUnsupervisedUMAP(X_all, p_umap, opts.ReuseExistingUMAP);
 
-% -- Map responsive units to training-subset local indices --------------------
+% -- Map ground-truth label-1 units to training-subset local indices ----------
 unit_ids_table    = string(ctc.FeatureStore.UnitTable.UnitID);
 unique_ud_ids     = string({nf.unique_ud.UnitID});
-resp_uids         = unique(unit_ids_table(ctc.ResponsiveUnitIdx));
+resp_uids         = unique(unit_ids_table(ctc.GroundTruthLabel1Idx));
 resp_unique       = ismember(unique_ud_ids, resp_uids);
 subset_responsive = resp_unique(nf.subset_mask);
 responsive_local  = find(subset_responsive);
 subset_global_idx = find(nf.subset_mask);
 
 if isempty(responsive_local)
-    n_resp_total = sum(ctc.ResponsiveUnitIdx);
-    error('CellTypeClassifier:noResponsiveUnits', ...
-        ['No responsive units found in the training culture subset.\n' ...
-         '  Total responsive units across all cultures: %d\n' ...
+    n_resp_total = sum(ctc.GroundTruthLabel1Idx);
+    error('CellTypeClassifier:noGroundTruthLabel1Units', ...
+        ['No ground-truth label-1 units found in the training culture subset.\n' ...
+         '  Total label-1 units across all cultures: %d\n' ...
          '  Training subset size: %d unique units\n' ...
          'Possible causes:\n' ...
-         '  1. Parameters.UMAP.TrainingCultureIdx excludes cultures with responsive units.\n' ...
+         '  1. Parameters.UMAP.TrainingCultureIdx excludes cultures with label-1 units.\n' ...
          '  2. Parameters.UMAP.GroupingValues does not match the baseline dose in the data.\n' ...
-         '  3. identifyResponsiveUnits() was not run, or produced 0 responsive units.\n' ...
-         'Diagnostic: check sum(ctc.ResponsiveUnitIdx) and ctc.Parameters.UMAP.TrainingCultureIdx.'], ...
+         '  3. identifyGroundTruthUnits() was not run, or produced 0 label-1 units.\n' ...
+         'Diagnostic: check sum(ctc.GroundTruthLabel1Idx) and ctc.Parameters.UMAP.TrainingCultureIdx.'], ...
         n_resp_total, sum(nf.subset_mask));
 end
 
 X_feat          = X_all(nf.subset_mask, :);
-has_explicit_ce = ~isempty(ctc.CounterexampleUnitIdx) && any(ctc.CounterexampleUnitIdx);
+has_explicit_ce = ~isempty(ctc.GroundTruthLabel2Idx) && any(ctc.GroundTruthLabel2Idx);
 
 % -- Stage 3: outlier detection and CE selection ------------------------------
 if has_explicit_ce
-    ce_uid_table = unique(unit_ids_table(ctc.CounterexampleUnitIdx));
+    ce_uid_table = unique(unit_ids_table(ctc.GroundTruthLabel2Idx));
     ce_subset    = ismember(unique_ud_ids(nf.subset_mask), ce_uid_table);
     ce_local_all = find(ce_subset);
     det = selectExplicitCE(X_feat, responsive_local, subset_responsive, ...
@@ -105,9 +105,9 @@ det.has_explicit_ce = has_explicit_ce;
 
 % -- Stage 4: assemble training labels ----------------------------------------
 ctc.TrainLabels = assembleTrainLabels(det, subset_global_idx, nf, p_train, ...
-    unit_ids_table, ctc.ResponsiveStrength);
+    unit_ids_table, ctc.GroundTruthLabel1Strength);
 
-resp_label    = p_train.ResponsiveClassLabel;
+resp_label    = p_train.GroundTruthLabel1;
 counter_label = 3 - resp_label;
 fprintf('Training set: %i %s, %i %s candidates\n', ...
     sum(ctc.TrainLabels.sorted_y_train == counter_label), localLabelName(counter_label), ...

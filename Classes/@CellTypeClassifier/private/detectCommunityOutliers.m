@@ -3,12 +3,12 @@ function det = detectCommunityOutliers(X_feat, responsive_local, subset_responsi
         p_comm, umap_model, rng_seed)
 % DETECTCOMMUNITYOUTLIERS  Louvain community detection + graph purity filter + k-medoids CE.
 %
-% Returns det.success=false when community structure does not separate responsive
-% units (triggers fallback to iforest in the orchestrator).
+% Returns det.success=false when community structure does not separate ground-truth
+% label-1 units (triggers fallback to iforest in the orchestrator).
 %
 % INPUTS:
 %   X_feat            - (N_subset x F) normalized feature matrix for training subset
-%   responsive_local  - (1 x R) local indices of responsive units in X_feat
+%   responsive_local  - (1 x R) local indices of ground-truth label-1 units in X_feat
 %   subset_responsive - (N_subset x 1) logical
 %   subset_global_idx - (1 x N_subset) global unique-unit index per subset row
 %   reduction         - (N_all x D) full UMAP embedding
@@ -47,7 +47,7 @@ n_comm        = max(best_M);
 fprintf('Louvain: %d communities, Q=%.3f (resolution=%.2f, %d restarts)\n', ...
     n_comm, best_Q, p_comm.LouvainResolution, p_comm.LouvainRestarts);
 
-% -- Identify inhibitory communities (enriched in responsive units) -----------
+% -- Identify inhibitory communities (enriched in ground-truth label-1 units) --
 resp_global_idx_all = subset_global_idx(responsive_local);
 resp_global_all     = false(1, N_all);
 resp_global_all(resp_global_idx_all) = true;
@@ -59,12 +59,12 @@ fprintf('Inhibitory communities: %d/%d (hypergeometric enrichment, FDR q<%.3f)\n
 
 in_inh_comm_global = ismember(best_M', inh_comm_ids);
 frac_resp_in_inh   = sum(resp_global_all & in_inh_comm_global) / max(sum(resp_global_all), 1);
-fprintf('Responsive units in inhibitory communities: %.1f%%\n', 100*frac_resp_in_inh);
+fprintf('Ground-truth label-1 units in inhibitory communities: %.1f%%\n', 100*frac_resp_in_inh);
 
 % -- Fallback check -----------------------------------------------------------
 if frac_resp_in_inh < p_comm.CommunityFallbackThreshold
     warning('CellTypeClassifier:communityFallback', ...
-        ['Only %.0f%% of responsive units in inhibitory communities ' ...
+        ['Only %.0f%% of ground-truth label-1 units in inhibitory communities ' ...
          '(threshold %.0f%%).\nFalling back to iforest path.\n' ...
          'Consider re-running optimizeUnsupervisedUMAP(), adjusting ' ...
          'Parameters.Community settings, or setting ' ...
@@ -83,18 +83,18 @@ end
 in_inh_resp = ismember(best_M(resp_global_idx_all)', inh_comm_ids);
 resp_community_outlier_mask = ~in_inh_resp;
 resp_in_inh_global = resp_global_idx_all(in_inh_resp);
-fprintf('Community outlier removal: %d/%d responsive units excluded\n', ...
+fprintf('Community outlier removal: %d/%d ground-truth label-1 units excluded\n', ...
     sum(resp_community_outlier_mask), numel(resp_global_idx_all));
 
 [resp_clean_global, resp_purity_outlier_mask] = graphPurityOutlier( ...
     reduction, resp_in_inh_global, resp_global_all, k_graph, ...
     p_comm.PuritySigmaThreshold);
-fprintf('Graph purity outlier removal: %d/%d remaining responsive excluded\n', ...
+fprintf('Graph purity outlier removal: %d/%d remaining label-1 units excluded\n', ...
     sum(resp_purity_outlier_mask), numel(resp_in_inh_global));
 
 if isempty(resp_clean_global)
     warning('CellTypeClassifier:generateTrainLabels', ...
-        'All responsive candidates removed by outlier detection — using community filter only.');
+        'All ground-truth label-1 candidates removed by outlier detection — using community filter only.');
     resp_clean_global        = resp_in_inh_global;
     resp_purity_outlier_mask = false(1, numel(resp_in_inh_global));
 end
@@ -115,7 +115,7 @@ ce_pool_global   = non_resp_global(in_ce_comm);
 ce_pool_comm_ids = best_M(ce_pool_global)';
 ce_communities_u = unique(ce_pool_comm_ids);
 n_ce_pool        = numel(ce_pool_global);
-fprintf('CE pool: %d non-responsive units in %d communities\n', ...
+fprintf('CE pool: %d non-label-1 units in %d communities\n', ...
     n_ce_pool, numel(ce_communities_u));
 
 n_clean_resp = numel(clean_resp_local);

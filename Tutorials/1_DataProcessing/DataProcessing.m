@@ -244,7 +244,7 @@ fprintf('Batch-loaded %d processors.\n', numel(procs));
 %
 %   fs = FeatureStore.fromProcessorPaths(proc_files);
 
-fs = FeatureStore.fromProcessors(procs);
+fs = FeatureStore.fromProcessors(procs_converted);
 
 fprintf('UnitTable     : %d rows x %d cols\n', height(fs.UnitTable),      width(fs.UnitTable));
 fprintf('RecordingTable: %d rows x %d cols\n', height(fs.RecordingTable), width(fs.RecordingTable));

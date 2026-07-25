@@ -13,7 +13,7 @@ function classifyUnitsEnsemble(ctc)
 %   Seeds        - (1 x N) RNG seeds, one per run (default [42,1042,2042,3042,4042])
 %   MinAgreement - minimum vote fraction for label assignment (default 0.6)
 %
-% Requires ctc.ResponsiveUnitIdx to be set (run identifyResponsiveUnits first).
+% Requires ctc.GroundTruthLabel1Idx to be set (run identifyGroundTruthUnits first).
 %
 % Sets:
 %   ctc.UnitLabels     - majority-vote labels (1=exc, 2=inh, NaN=below threshold)
@@ -23,8 +23,8 @@ arguments
     ctc CellTypeClassifier
 end
 
-assert(~isempty(ctc.ResponsiveUnitIdx), ...
-    'Run identifyResponsiveUnits() before classifyUnitsEnsemble().');
+assert(~isempty(ctc.GroundTruthLabel1Idx), ...
+    'Run identifyGroundTruthUnits() before classifyUnitsEnsemble().');
 p_ens   = ctc.Parameters.Ensemble;
 seeds   = p_ens.Seeds;
 N       = numel(seeds);

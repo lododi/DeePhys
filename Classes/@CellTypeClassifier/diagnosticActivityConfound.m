@@ -7,7 +7,7 @@ function diagnosticActivityConfound(ctc)
 % large baseline-height gap between predicted classes with almost no
 % corresponding difference in mean waveform shape -- consistent with the
 % classifier separating units by overall firing rate/regularity rather than
-% true cell identity. Since identifyResponsiveUnits' ground truth is itself
+% true cell identity. Since identifyGroundTruthUnits' ground truth is itself
 % firing-rate-based, that would be a real circularity, not just a cosmetic
 % concern.
 %
